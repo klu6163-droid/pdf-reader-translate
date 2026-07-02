@@ -5,6 +5,24 @@ use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 
+/// 读取本地 PDF 文件，返回字节数组。
+/// 前端通过 invoke("read_pdf_file", { path }) 调用。
+/// 用 Rust 直接读文件，不依赖 tauri-plugin-fs 的 scope 配置。
+#[tauri::command]
+fn read_pdf_file(path: String) -> Result<Vec<u8>, String> {
+    // 只允许 .pdf 后缀，防止前端传入意外路径
+    let p = std::path::Path::new(&path);
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext != "pdf" {
+        return Err(format!("不支持的文件类型：{ext}，请选择 PDF 文件"));
+    }
+    std::fs::read(&path).map_err(|e| format!("读取文件失败：{e}"))
+}
+
 /// 保存 Python 子进程句柄，应用退出时一并关闭
 struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
@@ -12,9 +30,9 @@ struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .invoke_handler(tauri::generate_handler![read_pdf_file])
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
             // 启动 Python 后端 sidecar（开发阶段直接用系统 Python）

@@ -1,9 +1,9 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readFile } from "@tauri-apps/plugin-fs";
-import { FileText, Settings as SettingsIcon, AlertTriangle } from "lucide-react";
+import { FileText, Settings as SettingsIcon, AlertTriangle, Upload } from "lucide-react";
 import { useStore } from "@/store/useSettings";
 import { checkBackend } from "@/services/api";
+import { readPdfFile, basename, listenDragDrop } from "@/services/pdf";
 import PDFViewer from "@/components/PDFViewer";
 import TranslationPanel from "@/components/TranslationPanel";
 import Settings from "@/components/Settings";
@@ -17,6 +17,10 @@ export default function App() {
     backendStatus,
     setBackendStatus,
   } = useStore();
+
+  // 拖放遮罩显隐 + 拖放错误提示
+  const [dragOver, setDragOver] = useState(false);
+  const [dropError, setDropError] = useState("");
 
   // 启动后轮询后端健康状态（后端由 Tauri 拉起，可能晚几秒才就绪）
   useEffect(() => {
@@ -34,6 +38,41 @@ export default function App() {
     };
   }, [setBackendStatus]);
 
+  // 从本地路径加载 PDF（打开按钮与拖放共用）
+  const loadFromPath = useCallback(
+    async (path: string) => {
+      try {
+        const bytes = await readPdfFile(path);
+        setPdf(bytes, basename(path));
+        setDropError("");
+      } catch (e) {
+        setDropError(e instanceof Error ? e.message : "打开 PDF 失败");
+      }
+    },
+    [setPdf]
+  );
+
+  // 监听 Tauri 原生拖放
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listenDragDrop({
+      onEnter: () => setDragOver(true),
+      onLeave: () => setDragOver(false),
+      onDrop: (paths) => {
+        const pdfs = paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
+        if (pdfs.length === 0) {
+          setDropError("请拖入 PDF 文件（未检测到 .pdf）");
+          return;
+        }
+        if (pdfs.length > 1) {
+          setDropError("检测到多个文件，仅打开第一个 PDF");
+        }
+        loadFromPath(pdfs[0]);
+      },
+    }).then((fn) => (unlisten = fn));
+    return () => unlisten?.();
+  }, [loadFromPath]);
+
   // 打开本地 PDF：优先用 Tauri 原生对话框；浏览器环境降级为 <input>
   const openPdf = useCallback(async () => {
     try {
@@ -42,9 +81,7 @@ export default function App() {
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (typeof selected === "string") {
-        const bytes = await readFile(selected);
-        const name = selected.split(/[\\/]/).pop() || "document.pdf";
-        setPdf(bytes, name);
+        await loadFromPath(selected);
       }
     } catch {
       // 非 Tauri 环境（纯浏览器 dev）降级
@@ -60,10 +97,17 @@ export default function App() {
       };
       input.click();
     }
-  }, [setPdf]);
+  }, [loadFromPath, setPdf]);
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-slate-100 relative">
+      {/* 拖放遮罩：当文件拖入窗口时显示 */}
+      {dragOver && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-primary-600/20 border-4 border-dashed border-primary-500 pointer-events-none">
+          <Upload size={56} className="text-primary-600 mb-3" strokeWidth={1.5} />
+          <p className="text-xl font-semibold text-primary-700">松开以打开 PDF</p>
+        </div>
+      )}
       {/* 顶部工具栏 */}
       <header className="flex items-center justify-between px-4 h-12 bg-white border-b shrink-0">
         <div className="flex items-center gap-3">
@@ -105,6 +149,14 @@ export default function App() {
             翻译与总结功能暂不可用。
           </span>
         </div>
+      )}
+
+      {/* 拖放错误提示条（自动 3 秒消失） */}
+      {dropError && (
+        <DropErrorBanner
+          message={dropError}
+          onDismiss={() => setDropError("")}
+        />
       )}
 
       {/* 主体：左右分栏 */}
@@ -162,6 +214,29 @@ function EmptyHint({ onOpen }: { onOpen: () => void }) {
       >
         选择本地 PDF 文件
       </button>
+      <p className="text-xs text-slate-400 mt-1">或将 PDF 文件拖入窗口</p>
+    </div>
+  );
+}
+
+function DropErrorBanner({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  // 3 秒后自动消失
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3000);
+    return () => clearTimeout(t);
+  }, [message, onDismiss]);
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 text-sm bg-red-50 text-red-600 border-b border-red-200 shrink-0">
+      <AlertTriangle size={16} className="shrink-0" />
+      <span className="flex-1">{message}</span>
+      <button onClick={onDismiss} className="text-red-400 hover:text-red-600 ml-2">✕</button>
     </div>
   );
 }
