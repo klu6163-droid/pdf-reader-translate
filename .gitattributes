@@ -1,0 +1,14 @@
+# 统一行尾，避免跨平台协作时出现整文件假 diff。
+# 文本文件在仓库内一律存为 LF，检出时由各平台 Git 自行处理。
+* text=auto eol=lf
+
+# 明确的二进制文件，不做行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
