@@ -1,0 +1,15 @@
+# Python 缓存与虚拟环境
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# 临时上传/输出（运行时产生）
+*.tmp
+uploads/
+outputs/
+
+# 日志
+*.log

@@ -1,0 +1,44 @@
+"""FastAPI 应用入口。"""
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.api import translate, pdf_trans, summary
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("app")
+
+app = FastAPI(title="PDF 阅读翻译后端", version="0.1.0")
+
+# 允许 Tauri / Vite 前端跨域访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """兜底异常处理：返回结构化 JSON（detail 字段与前端约定一致），而非裸 500。"""
+    logger.exception("未处理异常: %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"服务器内部错误: {exc.__class__.__name__}: {exc}"},
+    )
+
+
+app.include_router(translate.router)
+app.include_router(pdf_trans.router)
+app.include_router(summary.router)
+
+
+@app.get("/api/health")
+async def health() -> dict:
+    return {"status": "ok"}
