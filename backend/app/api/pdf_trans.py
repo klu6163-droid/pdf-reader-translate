@@ -55,6 +55,7 @@ async def start_pdf_translate(
                         "message": prog.message,
                         "mode": prog.mode,
                         "done": prog.done,
+                        "error": prog.error,
                     },
                 )
                 if prog.done and prog.result_path:

@@ -57,6 +57,7 @@ class TranslateProgress:
     done: bool = False
     result_path: Optional[str] = None
     mode: str = ""                # "pdf2zh" 或 "fallback"
+    error: bool = False           # 失败时为 True，前端据此显示错误而非加载结果
 
 
 def _pdf2zh_available() -> bool:
@@ -154,8 +155,10 @@ async def _translate_with_pdf2zh(
 
     exc = task.exception()
     if exc:
+        import traceback
+        traceback.print_exc()  # 打到后端 stdout，便于排查
         yield TranslateProgress(
-            1.0, f"pdf2zh 翻译失败: {exc}", done=True, mode="pdf2zh"
+            1.0, f"pdf2zh 翻译失败: {exc}", done=True, mode="pdf2zh", error=True
         )
         return
 
@@ -178,6 +181,7 @@ async def _translate_with_pdf2zh(
             "pdf2zh 未生成结果文件，请检查配置或改用降级模式",
             done=True,
             mode="pdf2zh",
+            error=True,
         )
 
 

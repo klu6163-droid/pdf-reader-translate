@@ -2,12 +2,20 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import translate, pdf_trans, summary
+
+# 后端不走系统代理，直连用户配置的 base_url。
+# 避免 httpx 自动套用系统代理（Clash/V2Ray 等）导致 TLS 握手失败；
+# pdf2zh 内部的 httpx/openai 客户端也读这些环境变量，一并清空。
+for _k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+           "http_proxy", "https_proxy", "all_proxy"):
+    os.environ.pop(_k, None)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")

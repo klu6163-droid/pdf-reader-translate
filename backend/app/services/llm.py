@@ -58,7 +58,7 @@ class LLMService:
             "stream": False,
         }
         url = f"{self._base}/chat/completions"
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             resp = await client.post(url, headers=self._headers, json=payload)
             if resp.status_code != 200:
                 raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
@@ -82,7 +82,7 @@ class LLMService:
             "stream": True,
         }
         url = f"{self._base}/chat/completions"
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             async with client.stream(
                 "POST", url, headers=self._headers, json=payload
             ) as resp:
