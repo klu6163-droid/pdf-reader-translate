@@ -216,8 +216,21 @@ windres: preprocessing failed.
 
 本项目基于 [MIT License](LICENSE) 开源。
 
-## 致谢
+## 致谢与开源依赖
 
-- 全文翻译思路参考 [PDFMathTranslate / pdf2zh](https://github.com/Byaidu/PDFMathTranslate)
-- PDF 渲染基于 [PDF.js](https://mozilla.github.io/pdf.js/)
-- 桌面壳基于 [Tauri](https://tauri.app/)
+本项目的全文翻译能力直接调用并打包了以下开源项目，特此鸣谢：
+
+- **[PDFMathTranslate / pdf2zh](https://github.com/Byaidu/PDFMathTranslate)** —— 全文翻译核心引擎，提供保留排版 / 公式 / 图表的双语对照翻译。本项目通过进程内 Python API 调用 pdf2zh，并在「阶段B」安装包中将其一并打包分发。
+- [PDF.js (pdfjs-dist)](https://mozilla.github.io/pdf.js/) —— 前端 PDF 渲染与文字层选中。
+- [Tauri](https://tauri.app/) —— 跨平台桌面外壳。
+- [FastAPI](https://fastapi.tiangolo.com/) / [PyInstaller](https://pyinstaller.org/) / [React](https://react.dev/) / [Tailwind CSS](https://tailwindcss.com/) —— 后端服务、打包与前端基础设施。
+
+### ⚠️ 关于 pdf2zh 的 AGPL-3.0 许可证
+
+pdf2zh 采用 **GNU AGPL-3.0** 许可证。本项目在「阶段B」安装包（`PDF2ZH_EXCLUDE=False`，即默认含 pdf2zh 的发行版）中打包了 pdf2zh，因此：
+
+- 该发行版二进制受 AGPL-3.0 约束；接收方有权获取对应源代码——即本仓库源码（已公开）。
+- 本项目**自身源码**采用 MIT 许可证；不含 pdf2zh 的「阶段A」轻量版（`PDF2ZH_EXCLUDE=True`）相应只受 MIT 约束。
+- 二次分发「阶段B」安装包时，请遵守 AGPL-3.0 条款（保留许可声明、提供源码途径等）。
+
+详见 [LICENSE](LICENSE) 与 [pdf2zh 的 LICENSE](https://github.com/Byaidu/PDFMathTranslate/blob/main/LICENSE)。
