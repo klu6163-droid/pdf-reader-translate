@@ -126,13 +126,39 @@ npm run dev              # 打开 http://localhost:1420
 
 ---
 
-## 打包
+## 打包成双击 .exe
+
+把 Python 后端用 PyInstaller 打成单一 exe，作为 Tauri sidecar 随主程序发布。用户无需装 Python/Node/Rust。
+
+### 前置
+- 已装 PyInstaller：`pip install pyinstaller`
+- 已装 Rust + MinGW（见上文前置要求）
+
+### 一键打包
 
 ```bash
-npm run tauri:build
+npm run dist
 ```
 
-> 打包发行版时，建议用 PyInstaller 把 `backend` 打成独立可执行文件作为 Tauri sidecar，并在 `tauri.conf.json` 的 `bundle.externalBin` 中登记；MVP 阶段默认直接调用系统 `python`。
+等价于 `npm run build:backend && npm run tauri:build`，产出安装包：
+`src-tauri/target/release/bundle/nsis/PDF Reader Translate_0.1.0_x64-setup.exe`
+
+### 是否打包 pdf2zh（影响体积与全文翻译能力）
+
+由 `backend/backend.spec` 的 `PDF2ZH_EXCLUDE` 控制：
+
+| 值 | sidecar 体积 | 安装包体积 | 全文翻译 |
+|----|------------|----------|---------|
+| `True`（阶段A） | ~58MB | ~62MB | 降级纯文本模式 |
+| `False`（阶段B，当前） | ~513MB | ~250MB | 保留排版/公式/图表（pdf2zh） |
+
+改 `PDF2ZH_EXCLUDE` 后需重跑 `npm run build:backend`。
+
+> 阶段B 体积大（onnxruntime/cv2/pymupdf 原生库 + onnx 模型），sidecar 首次启动需解压，后端就绪较慢（约 10-20s）。首次全文翻译需联网下载版面识别模型（pdf2zh 行为，之后走缓存）。
+
+### 打包版注意事项
+- 不签名：Windows 首次运行会弹 SmartScreen「未知发布者」→「更多信息」→「仍要运行」
+- 开发模式（`tauri:dev`）仍用系统 Python 跑后端，改后端代码免重打包；发布模式用 sidecar
 
 ## 图标
 

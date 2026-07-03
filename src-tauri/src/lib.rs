@@ -66,10 +66,17 @@ async fn start_backend(app: &tauri::AppHandle) {
         return;
     }
 
-    // 在多个候选位置查找 backend/start.py：
-    // - 开发模式：工作目录通常是 src-tauri，脚本在 ../backend
-    // - 打包模式：随资源目录分发
-    let script_path = match locate_backend_script(app) {
+    // 双模式：开发用系统 Python（改后端代码免重打包），发布用 sidecar exe
+    #[cfg(debug_assertions)]
+    start_backend_dev(app).await;
+    #[cfg(not(debug_assertions))]
+    start_backend_sidecar(app).await;
+}
+
+/// 开发模式：用系统 Python 跑 backend/start.py
+#[cfg(debug_assertions)]
+async fn start_backend_dev(app: &tauri::AppHandle) {
+    let script_path = match locate_backend_script() {
         Some(p) => p,
         None => {
             eprintln!(
@@ -80,7 +87,6 @@ async fn start_backend(app: &tauri::AppHandle) {
     };
     println!("[Tauri] Using backend script: {script_path}");
 
-    // 依次尝试 python / python3，兼容不同系统
     for py in ["python", "python3"] {
         match app.shell().command(py).args([&script_path]).spawn() {
             Ok((_, child)) => {
@@ -100,6 +106,29 @@ async fn start_backend(app: &tauri::AppHandle) {
     eprintln!("[Tauri] 无法启动 Python 后端，请手动运行：python backend/start.py");
 }
 
+/// 发布模式：启动打包好的 backend sidecar exe
+#[cfg(not(debug_assertions))]
+async fn start_backend_sidecar(app: &tauri::AppHandle) {
+    let cmd = match app.shell().sidecar("backend") {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[Tauri] sidecar 构造失败: {e}");
+            return;
+        }
+    };
+    match cmd.spawn() {
+        Ok((_rx, child)) => {
+            if let Some(state) = app.try_state::<BackendProcess>() {
+                if let Ok(mut guard) = state.0.lock() {
+                    *guard = Some(child);
+                }
+            }
+            println!("[Tauri] backend sidecar started");
+        }
+        Err(e) => eprintln!("[Tauri] sidecar spawn 失败: {e}"),
+    }
+}
+
 /// 探测本地 8765 端口是否有服务在监听。
 fn backend_is_up() -> bool {
     use std::net::TcpStream;
@@ -111,16 +140,11 @@ fn backend_is_up() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
-/// 在多个候选路径中查找 start.py，返回第一个存在的绝对路径。
-fn locate_backend_script(app: &tauri::AppHandle) -> Option<String> {
+/// 在多个候选路径中查找 start.py，返回第一个存在的绝对路径。（仅开发模式用）
+#[cfg(debug_assertions)]
+fn locate_backend_script() -> Option<String> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
-    // 资源目录（打包后）
-    if let Ok(res) = app.path().resource_dir() {
-        candidates.push(res.join("backend/start.py"));
-        candidates.push(res.join("../backend/start.py"));
-    }
-    // 当前工作目录及其上级（开发模式，cwd 常为 src-tauri 或项目根）
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("backend/start.py"));
         candidates.push(cwd.join("../backend/start.py"));

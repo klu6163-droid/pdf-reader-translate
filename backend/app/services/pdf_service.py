@@ -60,11 +60,14 @@ class TranslateProgress:
 
 
 def _pdf2zh_available() -> bool:
-    try:
-        import pdf2zh  # noqa: F401
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+    """检测 pdf2zh 是否可用。
+
+    用 find_spec 而非直接 import，避免 PyInstaller 静态分析把 pdf2zh
+    强制打包进 exe（是否打包由 backend.spec 的 collect 配置决定）。
+    """
+    import importlib.util
+
+    return importlib.util.find_spec("pdf2zh") is not None
 
 
 async def translate_pdf(
@@ -88,64 +91,87 @@ async def _translate_with_pdf2zh(
     config: LLMConfig,
     target_lang: str,
 ) -> AsyncGenerator[TranslateProgress, None]:
-    """调用 pdf2zh 保留排版翻译。
+    """调用 pdf2zh 保留排版翻译（进程内调用 Python API）。
 
-    pdf2zh 通过环境变量读取 OpenAI-compatible 配置，这里在子进程中注入，
-    避免污染主进程环境，也不会把 key 写入磁盘。
+    打包后用户机器没有 pdf2zh CLI，故改用 pdf2zh.translate() 进程内调用。
+    translate() 是同步阻塞函数，放到线程里跑，主协程轮询 callback 写入的进度。
     """
+    # 延迟导入：配合 find_spec，让 PyInstaller 是否打包 pdf2zh 由 spec 决定
+    from pdf2zh import translate
+    from pdf2zh.doclayout import ModelInstance, OnnxModel
+
     yield TranslateProgress(0.02, "启动 pdf2zh 引擎...", mode="pdf2zh")
-
     os.makedirs(out_dir, exist_ok=True)
-    env = os.environ.copy()
-    env["OPENAI_API_KEY"] = config.api_key
-    env["OPENAI_BASE_URL"] = config.base_url
-    env["OPENAI_MODEL"] = config.model
 
-    # pdf2zh 输出 {name}-mono.pdf（单语）与 {name}-dual.pdf（双语对照）
+    # pdf2zh 的版面识别 onnx 模型需手动初始化（CLI 启动时做，进程内调用要自己做）。
+    # from_pretrained 首次会从 huggingface 下载模型，之后走本地缓存。
+    if ModelInstance.value is None:
+        yield TranslateProgress(0.05, "加载版面识别模型（首次需联网下载）...", mode="pdf2zh")
+        ModelInstance.value = OnnxModel.from_pretrained()
+    model = ModelInstance.value
+
+    # OpenAI translator 的 envs 字段名（见 pdf2zh/translator.py OpenAITranslator）
+    envs = {
+        "OPENAI_BASE_URL": config.base_url,
+        "OPENAI_API_KEY": config.api_key,
+        "OPENAI_MODEL": config.model,
+    }
+
     base = os.path.splitext(os.path.basename(pdf_path))[0]
-    cmd = [
-        "pdf2zh",
-        pdf_path,
-        "-o",
-        out_dir,
-        "-lo",
-        target_lang,
-        "-s",
-        "openai",
-    ]
+    progress_box = {"pct": 0.0}
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        env=env,
+    def _cb(p) -> None:
+        try:
+            total = getattr(p, "total", 0) or 1
+            progress_box["pct"] = getattr(p, "n", 0) / total
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 在独立线程跑同步 translate，主协程轮询进度
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            translate,
+            files=[pdf_path],
+            output=out_dir,
+            lang_in="",
+            lang_out=target_lang,
+            service="openai",
+            envs=envs,
+            thread=4,
+            model=model,
+            callback=_cb,
+        )
     )
 
-    # pdf2zh 会往 stdout 打印进度（含百分比），这里做粗略解析
-    assert proc.stdout is not None
-    last = 0.05
-    async for raw in proc.stdout:
-        line = raw.decode("utf-8", "ignore").strip()
-        if not line:
-            continue
-        pct = _parse_percent(line)
-        if pct is not None:
-            last = 0.05 + pct * 0.9
-        yield TranslateProgress(min(last, 0.95), f"翻译中: {line[:80]}", mode="pdf2zh")
+    while not task.done():
+        pct = progress_box["pct"]
+        yield TranslateProgress(
+            min(0.05 + pct * 0.9, 0.95),
+            f"翻译中... {int(pct * 100)}%",
+            mode="pdf2zh",
+        )
+        await asyncio.sleep(0.5)
 
-    await proc.wait()
+    exc = task.exception()
+    if exc:
+        yield TranslateProgress(
+            1.0, f"pdf2zh 翻译失败: {exc}", done=True, mode="pdf2zh"
+        )
+        return
 
+    # pdf2zh 输出 {name}-mono.pdf（单语）与 {name}-dual.pdf（双语对照）
     mono = os.path.join(out_dir, f"{base}-mono.pdf")
     result = mono if os.path.exists(mono) else None
     if result is None:
-        # 兜底：目录里找任意生成的 pdf
         for f in os.listdir(out_dir):
             if f.endswith(".pdf") and f != os.path.basename(pdf_path):
                 result = os.path.join(out_dir, f)
                 break
 
     if result and os.path.exists(result):
-        yield TranslateProgress(1.0, "翻译完成", done=True, result_path=result, mode="pdf2zh")
+        yield TranslateProgress(
+            1.0, "翻译完成", done=True, result_path=result, mode="pdf2zh"
+        )
     else:
         yield TranslateProgress(
             1.0,
@@ -153,19 +179,6 @@ async def _translate_with_pdf2zh(
             done=True,
             mode="pdf2zh",
         )
-
-
-def _parse_percent(line: str) -> Optional[float]:
-    """从 pdf2zh 日志行中解析百分比（0~1）。"""
-    import re
-
-    m = re.search(r"(\d{1,3})%", line)
-    if m:
-        try:
-            return min(int(m.group(1)) / 100.0, 1.0)
-        except ValueError:
-            return None
-    return None
 
 
 async def _translate_fallback(
