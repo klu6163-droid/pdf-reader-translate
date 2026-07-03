@@ -2,6 +2,7 @@
 
 MVP 阶段用内存字典即可；生产可替换为 Redis。每个任务保存：
 - 进度队列（asyncio.Queue），供 SSE 消费
+- 最后一条事件，供 SSE 重连时立即恢复当前状态
 - 最终结果路径 / 状态
 """
 from __future__ import annotations
@@ -19,6 +20,7 @@ class Task:
     result: Optional[Any] = None
     error: Optional[str] = None
     finished: bool = False
+    last_event: Optional[dict] = None
 
 
 class TaskManager:
@@ -37,6 +39,7 @@ class TaskManager:
     async def push(self, task_id: str, event: dict) -> None:
         task = self._tasks.get(task_id)
         if task:
+            task.last_event = event
             await task.queue.put(event)
 
     def finish(self, task_id: str, result: Any = None, error: Optional[str] = None) -> None:

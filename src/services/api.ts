@@ -1,4 +1,4 @@
-// 前端 → Python 后端 的 HTTP 封装。
+// 前端 -> Python 后端 的 HTTP 封装。
 // 后端固定监听 127.0.0.1:8765。
 
 import type {
@@ -45,21 +45,16 @@ async function apiFetch(
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
-      // 若是调用方自己的 signal 触发的中断，原样抛出
       if (init.signal?.aborted) throw e;
       throw new TimeoutError(timeoutSec);
     }
-    // TypeError: Failed to fetch —— 通常是后端没起或端口不通
     throw new BackendUnreachableError();
   } finally {
     clearTimeout(timer);
   }
 }
 
-/**
- * 探测后端是否可用（供 App 启动时轮询用）。
- * 不抛错，返回布尔。
- */
+/** 探测后端是否可用（供 App 启动时轮询用）。 */
 export async function checkBackend(): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -74,11 +69,7 @@ export async function checkBackend(): Promise<boolean> {
   }
 }
 
-/**
- * 把 PDF 字节安全地包成 Blob。
- * 新版 TS lib 中 Uint8Array 是泛型（可能是 SharedArrayBuffer 支撑），
- * 直接传给 Blob 构造函数会报类型错误；这里复制到一段独立的 ArrayBuffer。
- */
+/** 把 PDF 字节安全地包成 Blob。 */
 export function bytesToPdfBlob(data: Uint8Array): Blob {
   const copy = new Uint8Array(data.length);
   copy.set(data);
@@ -128,10 +119,7 @@ export async function translateText(
     },
     90
   );
-  if (!resp.ok) {
-    const detail = await safeDetail(resp);
-    throw new Error(detail);
-  }
+  if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
 }
 
@@ -145,13 +133,10 @@ export async function startPdfTranslate(
   const form = new FormData();
   form.append("file", file, filename);
   form.append("target_lang", targetLang);
-  form.append("api_key", settings.apiKey);
-  form.append("base_url", settings.baseUrl);
-  form.append("model", settings.model);
 
   const resp = await apiFetch(
     "/api/translate/pdf/start",
-    { method: "POST", body: form },
+    { method: "POST", body: form, headers: llmHeaders(settings) },
     120
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
@@ -165,9 +150,7 @@ export function subscribePdfProgress(
   onEvent: (e: PdfProgressEvent) => void,
   onError?: (err: Error) => void
 ): () => void {
-  const es = new EventSource(
-    `${BASE}/api/translate/pdf/progress/${taskId}`
-  );
+  const es = new EventSource(`${BASE}/api/translate/pdf/progress/${taskId}`);
   es.onmessage = (ev) => {
     try {
       const data = JSON.parse(ev.data) as PdfProgressEvent;
@@ -200,15 +183,12 @@ export async function streamSummary(
 ): Promise<void> {
   const form = new FormData();
   form.append("file", file, filename);
-  form.append("api_key", settings.apiKey);
-  form.append("base_url", settings.baseUrl);
-  form.append("model", settings.model);
 
   let resp: Response;
   try {
     resp = await apiFetch(
       "/api/summary/stream",
-      { method: "POST", body: form },
+      { method: "POST", body: form, headers: llmHeaders(settings) },
       300
     );
   } catch (e) {
@@ -253,6 +233,14 @@ export async function streamSummary(
     }
   }
   onDone();
+}
+
+function llmHeaders(s: LLMSettings): Record<string, string> {
+  return {
+    "x-llm-api-key": s.apiKey,
+    "x-llm-base-url": s.baseUrl,
+    "x-llm-model": s.model,
+  };
 }
 
 function toConfig(s: LLMSettings) {

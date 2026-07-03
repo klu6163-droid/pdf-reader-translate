@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import json
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 import httpx
 
@@ -22,6 +22,8 @@ ANTI_HALLUCINATION = (
     "若某项信息在原文中无法找到或不确定，必须原样输出「原文未明确说明」，"
     "禁止猜测或杜撰。"
 )
+
+SUMMARY_HEADINGS = "## 研究问题\n## 方法\n## 主要贡献\n## 实验结果\n## 结论\n## 局限性\n## 中文摘要"
 
 
 class LLMError(Exception):
@@ -127,19 +129,129 @@ class LLMService:
         system = (
             "你是严谨的学术论文分析助手。请依据用户提供的论文全文，"
             "输出结构化中文总结，使用如下 Markdown 小标题，缺失项写「原文未明确说明」：\n"
-            "## 研究问题\n## 方法\n## 主要贡献\n## 实验结果\n## 结论\n"
-            "## 局限性\n## 中文摘要\n"
-            + ANTI_HALLUCINATION
+            f"{SUMMARY_HEADINGS}\n" + ANTI_HALLUCINATION
         )
-        # 控制上下文长度，过长时截断并提示
-        max_chars = 48000
-        truncated = full_text[:max_chars]
-        note = "" if len(full_text) <= max_chars else "\n\n（注：原文过长，仅提供前部分内容）"
         messages = [
             {"role": "system", "content": system},
-            {"role": "user", "content": f"论文全文如下：\n\n{truncated}{note}"},
+            {"role": "user", "content": f"论文全文如下：\n\n{full_text}"},
         ]
         return messages
+
+    async def summary_stream(self, full_text: str) -> AsyncGenerator[str, None]:
+        """流式生成结构化总结。长文先分块提炼，再汇总。"""
+        chunks = _chunk_text(full_text, max_chars=28000)
+        if len(chunks) == 1:
+            async for delta in self.chat_stream(
+                self.build_summary_messages(chunks[0]), temperature=0.2
+            ):
+                yield delta
+            return
+
+        notes: list[str] = []
+        for idx, chunk in enumerate(chunks, start=1):
+            notes.append(
+                await self.chat(
+                    self.build_chunk_summary_messages(chunk, idx, len(chunks)),
+                    temperature=0.1,
+                    timeout=180.0,
+                )
+            )
+
+        notes = await self.compact_summary_notes(notes)
+
+        async for delta in self.chat_stream(
+            self.build_final_summary_messages(notes), temperature=0.2, timeout=300.0
+        ):
+            yield delta
+
+    def build_chunk_summary_messages(self, chunk: str, index: int, total: int) -> list[dict]:
+        """构造长文分块证据笔记的消息。"""
+        system = (
+            "你是严谨的学术论文分析助手。请只依据当前分段，提取可用于最终总结的证据笔记。"
+            "按研究问题、方法、主要贡献、实验结果、结论、局限性、摘要要点组织；"
+            "当前分段没有的信息写「原文未明确说明」。" + ANTI_HALLUCINATION
+        )
+        user = (
+            f"这是论文全文按顺序切分后的第 {index}/{total} 段。"
+            "请输出简洁中文证据笔记，不要写最终总结。\n\n"
+            f"{chunk}"
+        )
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    async def compact_summary_notes(self, notes: list[str]) -> list[str]:
+        """Compress intermediate notes if they would make the final prompt too large."""
+        while len("\n\n".join(notes)) > 48000 and len(notes) > 1:
+            reduced: list[str] = []
+            for start in range(0, len(notes), 4):
+                group = notes[start:start + 4]
+                reduced.append(
+                    await self.chat(
+                        self.build_notes_reduce_messages(group, start // 4 + 1),
+                        temperature=0.1,
+                        timeout=180.0,
+                    )
+                )
+            notes = reduced
+        return notes
+
+    def build_notes_reduce_messages(self, notes: list[str], group_index: int) -> list[dict]:
+        """Construct a prompt that compresses several evidence-note chunks."""
+        system = (
+            "你是严谨的学术论文分析助手。请合并多段证据笔记，保留具体方法、结果、贡献和局限性，"
+            "删除重复信息；不得加入笔记没有的信息。" + ANTI_HALLUCINATION
+        )
+        joined = "\n\n".join(
+            f"### 待合并笔记 {i}\n{note}" for i, note in enumerate(notes, start=1)
+        )
+        user = f"这是第 {group_index} 组分段证据笔记，请压缩合并：\n\n{joined}"
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    def build_final_summary_messages(self, notes: list[str]) -> list[dict]:
+        """构造长文最终汇总消息。"""
+        system = (
+            "你是严谨的学术论文分析助手。请依据按原文顺序整理的分段证据笔记，"
+            "输出结构化中文总结，使用如下 Markdown 小标题，缺失项写「原文未明确说明」：\n"
+            f"{SUMMARY_HEADINGS}\n" + ANTI_HALLUCINATION
+        )
+        joined = "\n\n".join(
+            f"### 分段笔记 {i}\n{note}" for i, note in enumerate(notes, start=1)
+        )
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"分段证据笔记如下：\n\n{joined}"},
+        ]
+
+
+def _chunk_text(text: str, max_chars: int) -> list[str]:
+    """Split text by paragraphs while respecting a soft character limit."""
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return [text]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    def flush() -> None:
+        nonlocal current, current_len
+        if current:
+            chunks.append("\n\n".join(current))
+            current = []
+            current_len = 0
+
+    for para in paragraphs:
+        if len(para) > max_chars:
+            flush()
+            for start in range(0, len(para), max_chars):
+                chunks.append(para[start:start + max_chars])
+            continue
+        next_len = current_len + len(para) + (2 if current else 0)
+        if next_len > max_chars:
+            flush()
+        current.append(para)
+        current_len += len(para) + (2 if current_len else 0)
+    flush()
+    return chunks
 
 
 async def test_config(config: LLMConfig) -> tuple[bool, str]:

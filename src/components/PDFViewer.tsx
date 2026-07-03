@@ -1,21 +1,20 @@
 // PDF.js 渲染器：负责渲染页面、翻页、缩放、滚动、文字选中。
-// 通过 side="left" 的实例上报选中文本与当前页码，实现左右同步。
+// 页面容器会一次创建，实际 canvas/textLayer 只在视口附近懒渲染。
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { ZoomIn, ZoomOut, AlertCircle, Loader2 } from "lucide-react";
 
-// 配置 worker（Vite 方式）
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
 interface Props {
-  data: Uint8Array | string; // 字节或 URL
+  data: Uint8Array | string;
   side: "left" | "right";
-  currentPage: number; // 当前页码（左侧用于上报，右侧用于同步滚动）
-  onPageChange?: (p: number) => void; // 左侧滚动时回调
+  currentPage: number;
+  onPageChange?: (p: number) => void;
 }
 
 export default function PDFViewer({ data, side, currentPage, onPageChange }: Props) {
@@ -26,10 +25,15 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
   const [loading, setLoading] = useState(true);
   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  const renderedPagesRef = useRef<Set<number>>(new Set());
+  const currentPageRef = useRef(currentPage);
 
   const setSelection = useSelectionReporter(side);
 
-  // 加载文档
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
   useEffect(() => {
     let cancelled = false;
     setLoadError("");
@@ -37,8 +41,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
     setNumPages(0);
     const load = async () => {
       try {
-        const src =
-          typeof data === "string" ? { url: data } : { data: data.slice(0) };
+        const src = typeof data === "string" ? { url: data } : { data: data.slice(0) };
         const doc = await pdfjsLib.getDocument(src as any).promise;
         if (cancelled) return;
         pdfRef.current = doc;
@@ -47,7 +50,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
       } catch (e) {
         if (cancelled) return;
         setLoading(false);
-        // 区分「结果 URL 拉不到」和「PDF 本身损坏 / worker 挂了」
         const isUrl = typeof data === "string";
         setLoadError(
           isUrl
@@ -66,66 +68,62 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
     };
   }, [data]);
 
-  // 渲染所有页面
   useEffect(() => {
     const doc = pdfRef.current;
     const container = containerRef.current;
     if (!doc || !container) return;
+
     let cancelled = false;
+    let observer: IntersectionObserver | null = null;
+    container.innerHTML = "";
+    pageElsRef.current.clear();
+    renderedPagesRef.current.clear();
 
-    const render = async () => {
+    const renderPage = async (pageNumber: number, pageDiv: HTMLDivElement) => {
+      if (renderedPagesRef.current.has(pageNumber)) return;
+      renderedPagesRef.current.add(pageNumber);
       try {
-        container.innerHTML = "";
-        pageElsRef.current.clear();
-        for (let i = 1; i <= doc.numPages; i++) {
-          if (cancelled) return;
-          const page = await doc.getPage(i);
-          const viewport = page.getViewport({ scale });
+        const page = await doc.getPage(pageNumber);
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale });
+        const canvas = pageDiv.querySelector("canvas");
+        const textLayerDiv = pageDiv.querySelector<HTMLDivElement>(".textLayer");
+        if (!canvas || !textLayerDiv) return;
 
-          const pageDiv = document.createElement("div");
-          pageDiv.className = "relative mx-auto my-3 shadow bg-white";
-          pageDiv.style.width = `${viewport.width}px`;
-          pageDiv.style.height = `${viewport.height}px`;
-          pageDiv.dataset.page = String(i);
+        syncPageLayerSize(pageDiv, textLayerDiv, viewport);
+        textLayerDiv.replaceChildren();
 
-          const canvas = document.createElement("canvas");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const ctx = canvas.getContext("2d")!;
-          pageDiv.appendChild(canvas);
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
 
-          // 文本层，用于选中
-          const textLayerDiv = document.createElement("div");
-          textLayerDiv.className = "textLayer";
-          pageDiv.appendChild(textLayerDiv);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (cancelled) return;
 
-          container.appendChild(pageDiv);
-          pageElsRef.current.set(i, pageDiv);
-
-          await page.render({ canvasContext: ctx, viewport }).promise;
-
-          // 渲染文本层（用于文字选中）。
-          // pdfjs v4 不同小版本 API 不同：优先 TextLayer 类，回退 renderTextLayer 函数。
-          try {
-            const textContent = await page.getTextContent();
-            const lib = pdfjsLib as any;
-            if (typeof lib.TextLayer === "function") {
-              const textLayer = new lib.TextLayer({
-                textContentSource: textContent,
-                container: textLayerDiv,
-                viewport,
-              });
-              await textLayer.render();
-            } else if (typeof lib.renderTextLayer === "function") {
-              await lib.renderTextLayer({
-                textContentSource: textContent,
-                container: textLayerDiv,
-                viewport,
-              }).promise;
-            }
-          } catch {
-            /* 文本层渲染失败不影响画面，仅无法选中该页 */
+        try {
+          const textContent = await page.getTextContent();
+          const lib = pdfjsLib as any;
+          if (typeof lib.TextLayer === "function") {
+            const textLayer = new lib.TextLayer({
+              textContentSource: textContent,
+              container: textLayerDiv,
+              viewport,
+            });
+            await textLayer.render();
+            appendEndOfContent(textLayerDiv);
+          } else if (typeof lib.renderTextLayer === "function") {
+            await lib.renderTextLayer({
+              textContentSource: textContent,
+              container: textLayerDiv,
+              viewport,
+            }).promise;
+            appendEndOfContent(textLayerDiv);
           }
+        } catch {
+          /* 文本层渲染失败不影响画面，仅无法选中该页 */
         }
       } catch (e) {
         if (!cancelled) {
@@ -137,13 +135,76 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
         }
       }
     };
-    render();
+
+    const buildPages = async () => {
+      try {
+        observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              const pageDiv = entry.target as HTMLDivElement;
+              const pageNumber = Number(pageDiv.dataset.page);
+              if (Number.isFinite(pageNumber)) {
+                void renderPage(pageNumber, pageDiv);
+              }
+            }
+          },
+          { root: container, rootMargin: "900px 0px" }
+        );
+
+        for (let i = 1; i <= doc.numPages; i++) {
+          if (cancelled) return;
+          const page = await doc.getPage(i);
+          const viewport = page.getViewport({ scale });
+
+          const pageDiv = document.createElement("div");
+          pageDiv.className = "relative mx-auto my-3 shadow bg-white";
+          pageDiv.style.width = `${viewport.width}px`;
+          pageDiv.style.height = `${viewport.height}px`;
+          pageDiv.style.setProperty("--scale-factor", String(viewport.scale));
+          pageDiv.dataset.page = String(i);
+
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          pageDiv.appendChild(canvas);
+
+          const textLayerDiv = document.createElement("div");
+          textLayerDiv.className = "textLayer";
+          syncPageLayerSize(pageDiv, textLayerDiv, viewport);
+          pageDiv.appendChild(textLayerDiv);
+
+          container.appendChild(pageDiv);
+          pageElsRef.current.set(i, pageDiv);
+          observer.observe(pageDiv);
+        }
+
+        if (side === "right") {
+          requestAnimationFrame(() => {
+            const el = pageElsRef.current.get(currentPageRef.current);
+            if (el) container.scrollTo({ top: el.offsetTop - 12, behavior: "auto" });
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setLoadError(
+            `PDF 渲染失败：${
+              e instanceof Error ? e.message : "worker 可能未正确加载"
+            }`
+          );
+        }
+      }
+    };
+
+    void buildPages();
     return () => {
       cancelled = true;
+      observer?.disconnect();
     };
-  }, [scale, numPages]);
+  }, [scale, numPages, side]);
 
-  // 滚动时上报当前页；右侧监听 store.currentPage 做同步
   const onScroll = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -161,7 +222,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
     if (onPageChange) onPageChange(best);
   }, [onPageChange]);
 
-  // 右侧根据 currentPage 同步滚动
   useEffect(() => {
     if (side !== "right") return;
     const el = pageElsRef.current.get(currentPage);
@@ -171,17 +231,16 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
     }
   }, [currentPage, side, numPages]);
 
-  // 文字选中上报
   const onMouseUp = useCallback(() => {
     if (side !== "left") return;
     const sel = window.getSelection();
     const text = sel?.toString().trim();
-    if (text) setSelection(text, currentPage);
+    if (!text || !sel) return;
+    setSelection(text, pageFromSelection(sel) ?? currentPage);
   }, [side, currentPage, setSelection]);
 
   return (
     <div className="flex flex-col h-full">
-      {/* 工具条 */}
       <div className="flex items-center gap-2 px-3 h-9 bg-white border-b text-sm shrink-0">
         <button
           onClick={() => setScale((s) => Math.max(0.5, s - 0.15))}
@@ -203,7 +262,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
         </span>
       </div>
 
-      {/* 页面滚动区 */}
       <div className="flex-1 relative overflow-hidden">
         {loadError && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100 text-center p-6">
@@ -228,7 +286,35 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
   );
 }
 
-// 把选中文本写进一个自定义事件总线，供 TextTranslate 消费
+function syncPageLayerSize(
+  pageDiv: HTMLDivElement,
+  textLayerDiv: HTMLDivElement,
+  viewport: pdfjsLib.PageViewport
+) {
+  const width = `${viewport.width}px`;
+  const height = `${viewport.height}px`;
+  pageDiv.style.width = width;
+  pageDiv.style.height = height;
+  pageDiv.style.setProperty("--scale-factor", String(viewport.scale));
+  textLayerDiv.style.width = width;
+  textLayerDiv.style.height = height;
+  textLayerDiv.style.setProperty("--scale-factor", String(viewport.scale));
+}
+
+function appendEndOfContent(textLayerDiv: HTMLDivElement) {
+  if (textLayerDiv.querySelector(".endOfContent")) return;
+  const end = document.createElement("div");
+  end.className = "endOfContent";
+  textLayerDiv.appendChild(end);
+}
+function pageFromSelection(sel: Selection): number | null {
+  const node = sel.anchorNode;
+  const element = node instanceof Element ? node : node?.parentElement;
+  const pageEl = element?.closest<HTMLElement>("[data-page]");
+  const page = Number(pageEl?.dataset.page);
+  return Number.isFinite(page) && page > 0 ? page : null;
+}
+
 function useSelectionReporter(side: "left" | "right") {
   return useCallback(
     (text: string, page: number) => {

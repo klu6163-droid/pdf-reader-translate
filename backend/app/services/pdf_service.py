@@ -261,14 +261,8 @@ def _write_text_pdf(pages: list[str], out_path: str) -> None:
                 y -= 14
             c.showPage()
         c.save()
-    except Exception:  # noqa: BLE001
-        # 最终兜底：写纯文本
-        txt_path = out_path.replace(".pdf", ".txt")
-        with open(txt_path, "w", encoding="utf-8") as f:
-            f.write("\n\n===== 分页 =====\n\n".join(pages))
-        # 复制一份为 .pdf 名以满足下游读取（实际是文本）
-        with open(out_path, "wb") as f:
-            f.write(open(txt_path, "rb").read())
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"生成降级 PDF 失败: {e}") from e
 
 
 def _wrap_lines(text: str, width: int) -> list[str]:
