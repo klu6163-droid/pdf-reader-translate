@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileText, Settings as SettingsIcon, AlertTriangle, Upload } from "lucide-react";
 import { useStore } from "@/store/useSettings";
@@ -22,6 +22,7 @@ export default function App() {
   // 拖放遮罩显隐 + 拖放错误提示
   const [dragOver, setDragOver] = useState(false);
   const [dropError, setDropError] = useState("");
+  const recentDropRef = useRef<{ path: string; at: number } | null>(null);
 
   // 启动后轮询后端健康状态（后端由 Tauri 拉起，可能晚几秒才就绪）
   useEffect(() => {
@@ -43,6 +44,14 @@ export default function App() {
   const loadFromPath = useCallback(
     async (path: string) => {
       try {
+        const normalizedPath = path.toLowerCase();
+        const now = Date.now();
+        const recent = recentDropRef.current;
+        if (recent?.path === normalizedPath && now - recent.at < 1200) {
+          return;
+        }
+        recentDropRef.current = { path: normalizedPath, at: now };
+
         const bytes = await readPdfFile(path);
         const id = addTab(bytes, basename(path));
         setDropError(id ? "" : "最多同时打开 8 个标签页");
