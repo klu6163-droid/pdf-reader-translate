@@ -35,7 +35,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/backend"]
+    "externalBin": ["binaries/backend"],
+    "resources": ["target/release/WebView2Loader.dll"]
   },
   "plugins": {}
 }
