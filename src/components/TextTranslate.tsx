@@ -1,25 +1,28 @@
 // 划词翻译：监听 PDFViewer 派发的 pdf-selection 事件，调用后端翻译。
+// 选中文本与译文存于当前标签页；loading 为组件本地态（仅活跃标签可见）。
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Loader2, Languages } from "lucide-react";
 import { translateText } from "@/services/api";
-import { useStore } from "@/store/useSettings";
+import { useStore, useActiveTab } from "@/store/useSettings";
 import type { SelectionInfo } from "@/types";
 
 export default function TextTranslate() {
-  const { settings, hasSettings, setSettingsOpen } = useStore();
-  const [selection, setSelection] = useState<SelectionInfo | null>(null);
-  const [translated, setTranslated] = useState("");
+  const tab = useActiveTab();
+  const activeTabId = useStore((s) => s.activeTabId);
+
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   // 保存进行中的请求控制器，新的划词到来时取消上一个，避免结果错位
   const abortRef = useRef<AbortController | null>(null);
 
   const doTranslate = useCallback(
-    async (text: string) => {
-      if (!hasSettings()) {
-        setError("请先在「设置」中配置 API Key");
-        setSettingsOpen(true);
+    async (text: string, targetId: string, page: number) => {
+      const s = useStore.getState();
+      if (!s.hasSettings()) {
+        s.updateTab(targetId, {
+          lastTranslateError: "请先在「设置」中配置 API Key",
+        });
+        s.setSettingsOpen(true);
         return;
       }
       // 取消上一个未完成的请求
@@ -27,32 +30,46 @@ export default function TextTranslate() {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      s.updateTab(targetId, {
+        lastSelection: { text, page },
+        lastTranslated: "",
+        lastTranslateError: "",
+      });
       setLoading(true);
-      setError("");
-      setTranslated("");
+
       try {
-        const res = await translateText(text, settings, "中文", controller.signal);
+        const res = await translateText(text, s.settings, "中文", controller.signal);
         // 若期间又发起了新请求，丢弃本次结果
         if (abortRef.current !== controller) return;
-        setTranslated(res.translated);
+        useStore.getState().updateTab(targetId, { lastTranslated: res.translated });
       } catch (e) {
-        // 主动取消不算错误
         if (e instanceof DOMException && e.name === "AbortError") return;
         if (abortRef.current !== controller) return;
-        setError(e instanceof Error ? e.message : "翻译失败");
+        useStore.getState().updateTab(targetId, {
+          lastTranslateError: e instanceof Error ? e.message : "翻译失败",
+        });
       } finally {
         if (abortRef.current === controller) setLoading(false);
       }
     },
-    [settings, hasSettings, setSettingsOpen]
+    []
   );
+
+  // 切换标签时复位 loading（旧标签的请求仍在后台写入其自身状态）
+  useEffect(() => {
+    setLoading(false);
+  }, [activeTabId]);
 
   // 监听划词事件
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as SelectionInfo;
-      setSelection(detail);
-      doTranslate(detail.text);
+      const s = useStore.getState();
+      const current = s.tabs.find((t) => t.id === s.activeTabId);
+      if (!current) return;
+      // 立即展示选中
+      s.updateTab(current.id, { lastSelection: detail });
+      doTranslate(detail.text, current.id, detail.page);
     };
     window.addEventListener("pdf-selection", handler);
     return () => {
@@ -60,6 +77,10 @@ export default function TextTranslate() {
       abortRef.current?.abort();
     };
   }, [doTranslate]);
+
+  const selection = tab?.lastSelection ?? null;
+  const translated = tab?.lastTranslated ?? "";
+  const error = tab?.lastTranslateError ?? "";
 
   return (
     <div className="flex flex-col h-full p-4 gap-3 overflow-auto">
@@ -95,7 +116,9 @@ export default function TextTranslate() {
           </section>
 
           <button
-            onClick={() => selection && doTranslate(selection.text)}
+            onClick={() =>
+              selection && doTranslate(selection.text, tab!.id, selection.page)
+            }
             disabled={loading}
             className="self-start px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
           >

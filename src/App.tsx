@@ -6,17 +6,18 @@ import { checkBackend } from "@/services/api";
 import { readPdfFile, basename, listenDragDrop } from "@/services/pdf";
 import PDFViewer from "@/components/PDFViewer";
 import TranslationPanel from "@/components/TranslationPanel";
+import TabBar from "@/components/TabBar";
 import Settings from "@/components/Settings";
 
 export default function App() {
-  const {
-    pdfData,
-    pdfName,
-    setPdf,
-    setSettingsOpen,
-    backendStatus,
-    setBackendStatus,
-  } = useStore();
+  const tabs = useStore((s) => s.tabs);
+  const activeTabId = useStore((s) => s.activeTabId);
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
+  const addTab = useStore((s) => s.addTab);
+  const updateTab = useStore((s) => s.updateTab);
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const backendStatus = useStore((s) => s.backendStatus);
+  const setBackendStatus = useStore((s) => s.setBackendStatus);
 
   // 拖放遮罩显隐 + 拖放错误提示
   const [dragOver, setDragOver] = useState(false);
@@ -38,18 +39,18 @@ export default function App() {
     };
   }, [setBackendStatus]);
 
-  // 从本地路径加载 PDF（打开按钮与拖放共用）
+  // 从本地路径加载 PDF 为新标签（打开按钮与拖放共用）
   const loadFromPath = useCallback(
     async (path: string) => {
       try {
         const bytes = await readPdfFile(path);
-        setPdf(bytes, basename(path));
-        setDropError("");
+        const id = addTab(bytes, basename(path));
+        setDropError(id ? "" : "最多同时打开 8 个标签页");
       } catch (e) {
         setDropError(e instanceof Error ? e.message : "打开 PDF 失败");
       }
     },
-    [setPdf]
+    [addTab]
   );
 
   // 监听 Tauri 原生拖放
@@ -92,12 +93,13 @@ export default function App() {
         const file = input.files?.[0];
         if (file) {
           const buf = new Uint8Array(await file.arrayBuffer());
-          setPdf(buf, file.name);
+          const id = addTab(buf, file.name);
+          setDropError(id ? "" : "最多同时打开 8 个标签页");
         }
       };
       input.click();
     }
-  }, [loadFromPath, setPdf]);
+  }, [loadFromPath, addTab]);
 
   return (
     <div className="flex flex-col h-full bg-slate-100 relative">
@@ -108,6 +110,7 @@ export default function App() {
           <p className="text-xl font-semibold text-primary-700">松开以打开 PDF</p>
         </div>
       )}
+
       {/* 顶部工具栏 */}
       <header className="flex items-center justify-between px-4 h-12 bg-white border-b shrink-0">
         <div className="flex items-center gap-3">
@@ -119,11 +122,6 @@ export default function App() {
             <FileText size={16} />
             打开 PDF
           </button>
-          {pdfName && (
-            <span className="text-sm text-slate-500 truncate max-w-xs">
-              {pdfName}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-3">
           <BackendIndicator status={backendStatus} />
@@ -136,6 +134,9 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* 标签栏 */}
+      <TabBar onOpen={openPdf} />
 
       {/* 后端离线提示条 */}
       {backendStatus === "offline" && (
@@ -153,24 +154,27 @@ export default function App() {
 
       {/* 拖放错误提示条（自动 3 秒消失） */}
       {dropError && (
-        <DropErrorBanner
-          message={dropError}
-          onDismiss={() => setDropError("")}
-        />
+        <DropErrorBanner message={dropError} onDismiss={() => setDropError("")} />
       )}
 
       {/* 主体：左右分栏 */}
       <div className="flex flex-1 min-h-0">
-        {/* 左侧原始 PDF */}
+        {/* 左侧原始 PDF（按标签 key 重建，保证每篇独立 PDF.js 实例） */}
         <div className="w-1/2 border-r bg-slate-200 min-w-0">
-          {pdfData ? (
-            <PDFViewer data={pdfData} side="left" />
+          {activeTab ? (
+            <PDFViewer
+              key={activeTab.id}
+              data={activeTab.pdfData}
+              side="left"
+              currentPage={activeTab.currentPage}
+              onPageChange={(p) => updateTab(activeTab.id, { currentPage: p })}
+            />
           ) : (
             <EmptyHint onOpen={openPdf} />
           )}
         </div>
 
-        {/* 右侧功能面板 */}
+        {/* 右侧功能面板（常驻，随激活标签重渲染） */}
         <div className="w-1/2 bg-white min-w-0">
           <TranslationPanel />
         </div>

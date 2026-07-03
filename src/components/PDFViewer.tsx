@@ -4,7 +4,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { ZoomIn, ZoomOut, AlertCircle, Loader2 } from "lucide-react";
-import { useStore } from "@/store/useSettings";
 
 // 配置 worker（Vite 方式）
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -15,9 +14,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 interface Props {
   data: Uint8Array | string; // 字节或 URL
   side: "left" | "right";
+  currentPage: number; // 当前页码（左侧用于上报，右侧用于同步滚动）
+  onPageChange?: (p: number) => void; // 左侧滚动时回调
 }
 
-export default function PDFViewer({ data, side }: Props) {
+export default function PDFViewer({ data, side, currentPage, onPageChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
@@ -26,8 +27,6 @@ export default function PDFViewer({ data, side }: Props) {
   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
 
-  const setCurrentPage = useStore((s) => s.setCurrentPage);
-  const currentPage = useStore((s) => s.currentPage);
   const setSelection = useSelectionReporter(side);
 
   // 加载文档
@@ -159,8 +158,8 @@ export default function PDFViewer({ data, side }: Props) {
         best = page;
       }
     });
-    if (side === "left") setCurrentPage(best);
-  }, [side, setCurrentPage]);
+    if (onPageChange) onPageChange(best);
+  }, [onPageChange]);
 
   // 右侧根据 currentPage 同步滚动
   useEffect(() => {

@@ -1,7 +1,8 @@
-// 全文翻译：上传当前 PDF → 后端处理 → SSE 进度 → 右侧显示翻译后 PDF。
-// 翻译后的 PDF 与左侧原文做页码级同步滚动（PDFViewer side="right"）。
+// 全文翻译：上传当前标签的 PDF → 后端处理 → SSE 进度 → 右侧显示翻译后 PDF。
+// 状态存于当前标签页（store），切换标签可保留进度；
+// 切回正在运行的任务时按 taskId 重连 SSE。
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { Loader2, Play, AlertCircle } from "lucide-react";
 import {
   startPdfTranslate,
@@ -9,91 +10,149 @@ import {
   pdfResultUrl,
   bytesToPdfBlob,
 } from "@/services/api";
-import { useStore } from "@/store/useSettings";
+import { useStore, useActiveTab } from "@/store/useSettings";
 import PDFViewer from "./PDFViewer";
-import type { PdfProgressEvent } from "@/types";
+import type { PdfProgressEvent, PdfTab } from "@/types";
 
 export default function FullTranslate() {
-  const { pdfData, pdfName, settings, hasSettings, setSettingsOpen } =
-    useStore();
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState("");
-  const [mode, setMode] = useState("");
-  const [error, setError] = useState("");
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
+  const tab = useActiveTab();
+  const updateTab = useStore((s) => s.updateTab);
+
+  // 当前标签的翻译任务 id；变化时（启动 / 切换标签）触发订阅
+  const taskId = tab?.translationTaskId ?? null;
+
+  // 订阅 SSE 进度。依赖 taskId：任务启动（设了 id）或切回运行中的任务时订阅；
+  // 进度更新不改变 taskId，因此不会反复重连。
+  useEffect(() => {
+    if (!taskId) return;
+    // 仅当该任务仍属运行中、无结果、无错误时才订阅
+    const st0 = useStore.getState();
+    const owner0 = st0.tabs.find((t) => t.translationTaskId === taskId);
+    if (
+      !owner0 ||
+      owner0.translatedPdfUrl ||
+      owner0.translationError ||
+      !owner0.translationRunning
+    )
+      return;
+
+    const cleanup = subscribePdfProgress(
+      taskId,
+      (e: PdfProgressEvent) => {
+        const cur = useStore.getState();
+        const owner = cur.tabs.find((t) => t.translationTaskId === taskId);
+        if (!owner) return;
+        const patch: Partial<PdfTab> = {
+          translationProgress: e.progress,
+          translationMessage: e.message,
+        };
+        if (e.mode) patch.translationMode = e.mode;
+        cur.updateTab(owner.id, patch);
+        if (e.done) {
+          cur.updateTab(
+            owner.id,
+            e.error
+              ? { translationRunning: false, translationError: e.message }
+              : {
+                  translationRunning: false,
+                  translatedPdfUrl: pdfResultUrl(taskId),
+                }
+          );
+        }
+      },
+      (err) => {
+        const cur = useStore.getState();
+        const owner = cur.tabs.find((t) => t.translationTaskId === taskId);
+        if (owner)
+          cur.updateTab(owner.id, {
+            translationRunning: false,
+            translationError: err.message,
+          });
+      }
+    );
+    return cleanup;
+  }, [taskId]);
 
   const start = useCallback(async () => {
-    if (!pdfData) {
-      setError("请先打开一个 PDF");
+    const s = useStore.getState();
+    const current = s.tabs.find((t) => t.id === s.activeTabId);
+    if (!current) return;
+    const targetId = current.id; // 捕获，避免异步期间切换标签写错对象
+
+    if (!current.pdfData) {
+      s.updateTab(targetId, { translationError: "请先打开一个 PDF" });
       return;
     }
-    if (!hasSettings()) {
-      setError("请先在「设置」中配置 API Key");
-      setSettingsOpen(true);
+    if (!s.hasSettings()) {
+      s.updateTab(targetId, { translationError: "请先在「设置」中配置 API Key" });
+      s.setSettingsOpen(true);
       return;
     }
-    setRunning(true);
-    setError("");
-    setProgress(0);
-    setResultUrl(null);
-    setMessage("上传中...");
+
+    s.updateTab(targetId, {
+      translationRunning: true,
+      translationError: "",
+      translationProgress: 0,
+      translatedPdfUrl: null,
+      translationMessage: "上传中...",
+      translationMode: "",
+      translationTaskId: null,
+    });
 
     try {
-      const blob = bytesToPdfBlob(pdfData);
-      const taskId = await startPdfTranslate(blob, pdfName, settings);
-
-      cleanupRef.current = subscribePdfProgress(
-        taskId,
-        (e: PdfProgressEvent) => {
-          setProgress(e.progress);
-          setMessage(e.message);
-          if (e.mode) setMode(e.mode);
-          if (e.done) {
-            setRunning(false);
-            if (e.error) {
-              setError(e.message);
-            } else {
-              setResultUrl(pdfResultUrl(taskId));
-            }
-          }
-        },
-        (err) => {
-          setRunning(false);
-          setError(err.message);
-        }
-      );
+      const blob = bytesToPdfBlob(current.pdfData);
+      const newTaskId = await startPdfTranslate(blob, current.name, s.settings);
+      // 设置 taskId 触发上面的订阅 effect
+      useStore.getState().updateTab(targetId, { translationTaskId: newTaskId });
     } catch (e) {
-      setRunning(false);
-      setError(e instanceof Error ? e.message : "启动失败");
+      useStore.getState().updateTab(targetId, {
+        translationRunning: false,
+        translationError: e instanceof Error ? e.message : "启动失败",
+      });
     }
-  }, [pdfData, pdfName, settings, hasSettings, setSettingsOpen]);
+  }, []);
 
   // 已有结果：显示翻译后的 PDF
-  if (resultUrl) {
+  if (tab?.translatedPdfUrl) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 px-3 py-2 text-xs bg-green-50 text-green-700 border-b shrink-0">
           翻译完成
-          {mode === "fallback" && (
+          {tab.translationMode === "fallback" && (
             <span className="text-amber-600">
               （降级模式：纯文本，未保留排版/公式/图表）
             </span>
           )}
           <button
-            onClick={() => setResultUrl(null)}
+            onClick={() =>
+              updateTab(tab.id, {
+                translatedPdfUrl: null,
+                translationProgress: 0,
+                translationMessage: "",
+              })
+            }
             className="ml-auto text-slate-500 hover:text-slate-700"
           >
             重新翻译
           </button>
         </div>
         <div className="flex-1 min-h-0">
-          <PDFViewer data={resultUrl} side="right" />
+          <PDFViewer
+            data={tab.translatedPdfUrl}
+            side="right"
+            currentPage={tab.currentPage}
+          />
         </div>
       </div>
     );
   }
+
+  const running = tab?.translationRunning ?? false;
+  const progress = tab?.translationProgress ?? 0;
+  const message = tab?.translationMessage ?? "";
+  const mode = tab?.translationMode ?? "";
+  const error = tab?.translationError ?? "";
+  const hasPdf = !!tab?.pdfData;
 
   return (
     <div className="flex flex-col h-full p-4 gap-4">
@@ -104,7 +163,7 @@ export default function FullTranslate() {
 
       <button
         onClick={start}
-        disabled={running || !pdfData}
+        disabled={running || !hasPdf}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
       >
         {running ? (
@@ -141,6 +200,12 @@ export default function FullTranslate() {
         <div className="flex items-start gap-2 p-3 text-sm bg-red-50 text-red-600 rounded">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {!hasPdf && (
+        <div className="text-sm text-slate-400 text-center mt-4">
+          请先在左侧打开一个 PDF
         </div>
       )}
     </div>

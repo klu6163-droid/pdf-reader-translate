@@ -1,27 +1,30 @@
-// 全局状态：LLM 配置 + 当前 PDF 文件。
+// 全局状态：LLM 配置 + 多 PDF 标签页。
 // 配置持久化到 localStorage（不写死在代码里，用户自行填写）。
+// PDF 数据不落盘（体积过大）。
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { LLMSettings } from "@/types";
+import type { LLMSettings, PdfTab } from "@/types";
+
+const MAX_TABS = 8;
 
 interface AppState {
   settings: LLMSettings;
   setSettings: (s: Partial<LLMSettings>) => void;
   hasSettings: () => boolean;
 
-  // 当前打开的 PDF
-  pdfData: Uint8Array | null;
-  pdfName: string;
-  setPdf: (data: Uint8Array, name: string) => void;
-
-  // 当前页码（用于左右同步滚动）
-  currentPage: number;
-  setCurrentPage: (p: number) => void;
-
-  // 翻译结果 PDF 的地址
-  translatedPdfUrl: string | null;
-  setTranslatedPdfUrl: (url: string | null) => void;
+  // 多标签页
+  tabs: PdfTab[];
+  activeTabId: string | null;
+  /** 新增标签页并激活。达到上限（8）时返回 null。 */
+  addTab: (data: Uint8Array, name: string) => string | null;
+  /** 关闭标签页，自动激活相邻标签。 */
+  closeTab: (id: string) => void;
+  setActiveTab: (id: string) => void;
+  /** 局部更新某个标签页的字段。 */
+  updateTab: (id: string, patch: Partial<PdfTab>) => void;
+  /** 追加总结内容（流式增量）。 */
+  appendSummary: (id: string, delta: string) => void;
 
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
@@ -37,6 +40,28 @@ const DEFAULT_SETTINGS: LLMSettings = {
   model: "gpt-4o-mini",
 };
 
+function createTab(data: Uint8Array, name: string): PdfTab {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    pdfData: data,
+    currentPage: 1,
+    translationTaskId: null,
+    translationRunning: false,
+    translationProgress: 0,
+    translationMessage: "",
+    translationMode: "",
+    translatedPdfUrl: null,
+    translationError: "",
+    summaryContent: "",
+    summaryRunning: false,
+    summaryError: "",
+    lastSelection: null,
+    lastTranslated: "",
+    lastTranslateError: "",
+  };
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -45,16 +70,40 @@ export const useStore = create<AppState>()(
         set((state) => ({ settings: { ...state.settings, ...s } })),
       hasSettings: () => !!get().settings.apiKey,
 
-      pdfData: null,
-      pdfName: "",
-      setPdf: (data, name) =>
-        set({ pdfData: data, pdfName: name, translatedPdfUrl: null }),
-
-      currentPage: 1,
-      setCurrentPage: (p) => set({ currentPage: p }),
-
-      translatedPdfUrl: null,
-      setTranslatedPdfUrl: (url) => set({ translatedPdfUrl: url }),
+      tabs: [],
+      activeTabId: null,
+      addTab: (data, name) => {
+        if (get().tabs.length >= MAX_TABS) return null;
+        const tab = createTab(data, name);
+        set((state) => ({ tabs: [...state.tabs, tab], activeTabId: tab.id }));
+        return tab.id;
+      },
+      closeTab: (id) =>
+        set((state) => {
+          const idx = state.tabs.findIndex((t) => t.id === id);
+          if (idx === -1) return {};
+          const tabs = state.tabs.filter((t) => t.id !== id);
+          let activeTabId = state.activeTabId;
+          if (activeTabId === id) {
+            // 激活相邻标签（优先右侧，否则左侧，否则无）
+            const next = tabs[Math.min(idx, tabs.length - 1)] ?? null;
+            activeTabId = next ? next.id : null;
+          }
+          return { tabs, activeTabId };
+        }),
+      setActiveTab: (id) => set({ activeTabId: id }),
+      updateTab: (id, patch) =>
+        set((state) => ({
+          tabs: state.tabs.map((t) =>
+            t.id === id ? { ...t, ...patch } : t
+          ),
+        })),
+      appendSummary: (id, delta) =>
+        set((state) => ({
+          tabs: state.tabs.map((t) =>
+            t.id === id ? { ...t, summaryContent: t.summaryContent + delta } : t
+          ),
+        })),
 
       settingsOpen: false,
       setSettingsOpen: (v) => set({ settingsOpen: v }),
@@ -69,3 +118,8 @@ export const useStore = create<AppState>()(
     }
   )
 );
+
+/** 读取当前激活的标签页。无标签时返回 null。 */
+export function useActiveTab(): PdfTab | null {
+  return useStore((s) => s.tabs.find((t) => t.id === s.activeTabId) ?? null);
+}

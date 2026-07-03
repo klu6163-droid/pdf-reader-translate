@@ -1,51 +1,64 @@
 // 文献总结：提取全文 → 流式生成结构化中文总结。
+// 状态存于当前标签页；切换标签时流不会中断（onDelta 写入所属标签）。
 // 用轻量的 Markdown 渲染（仅处理 ## 标题与段落），避免额外依赖。
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { Loader2, Sparkles, AlertCircle } from "lucide-react";
 import { streamSummary, bytesToPdfBlob } from "@/services/api";
-import { useStore } from "@/store/useSettings";
+import { useStore, useActiveTab } from "@/store/useSettings";
 
 export default function Summary() {
-  const { pdfData, pdfName, settings, hasSettings, setSettingsOpen } =
-    useStore();
-  const [running, setRunning] = useState(false);
-  const [content, setContent] = useState("");
-  const [error, setError] = useState("");
+  const tab = useActiveTab();
 
   const start = useCallback(async () => {
-    if (!pdfData) {
-      setError("请先打开一个 PDF");
-      return;
-    }
-    if (!hasSettings()) {
-      setError("请先在「设置」中配置 API Key");
-      setSettingsOpen(true);
-      return;
-    }
-    setRunning(true);
-    setError("");
-    setContent("");
+    const s = useStore.getState();
+    const current = s.tabs.find((t) => t.id === s.activeTabId);
+    if (!current) return;
+    const targetId = current.id; // 捕获，避免异步期间切换标签写错对象
 
-    const blob = bytesToPdfBlob(pdfData);
+    if (!current.pdfData) {
+      s.updateTab(targetId, { summaryError: "请先打开一个 PDF" });
+      return;
+    }
+    if (!s.hasSettings()) {
+      s.updateTab(targetId, { summaryError: "请先在「设置」中配置 API Key" });
+      s.setSettingsOpen(true);
+      return;
+    }
+
+    s.updateTab(targetId, {
+      summaryRunning: true,
+      summaryError: "",
+      summaryContent: "",
+    });
+
+    const blob = bytesToPdfBlob(current.pdfData);
     await streamSummary(
       blob,
-      pdfName,
-      settings,
-      (delta) => setContent((c) => c + delta),
-      () => setRunning(false),
-      (err) => {
-        setError(err);
-        setRunning(false);
-      }
+      current.name,
+      s.settings,
+      // 增量写入「拥有该任务的标签」——即便用户已切到别的标签，
+      // 流仍在后台累积到原标签的 summaryContent。
+      (delta) => useStore.getState().appendSummary(targetId, delta),
+      () => useStore.getState().updateTab(targetId, { summaryRunning: false }),
+      (err) =>
+        useStore.getState().updateTab(targetId, {
+          summaryRunning: false,
+          summaryError: err,
+        })
     );
-  }, [pdfData, pdfName, settings, hasSettings, setSettingsOpen]);
+  }, []);
+
+  const running = tab?.summaryRunning ?? false;
+  const content = tab?.summaryContent ?? "";
+  const error = tab?.summaryError ?? "";
+  const hasPdf = !!tab?.pdfData;
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
       <button
         onClick={start}
-        disabled={running || !pdfData}
+        disabled={running || !hasPdf}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 shrink-0"
       >
         {running ? (
@@ -80,6 +93,12 @@ export default function Summary() {
           {running && (
             <span className="inline-block w-2 h-4 bg-primary-500 animate-pulse ml-0.5 align-middle" />
           )}
+        </div>
+      )}
+
+      {!hasPdf && !running && (
+        <div className="text-sm text-slate-400 text-center mt-4">
+          请先在左侧打开一个 PDF
         </div>
       )}
     </div>
