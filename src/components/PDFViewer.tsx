@@ -1,17 +1,10 @@
-// PDF.js 渲染器：渲染页面、翻页、缩放、滚动、文字选中、编辑。
-// 页面按 editState.pageOrder 顺序渲染（跳过删除页），应用 rotations 旋转。
-// 每页挂一个 EditLayer（createRoot）。工具为 select 时不拦截划词。
+// PDF.js 渲染器：负责渲染页面、翻页、缩放、滚动、文字选中。
+// 页面容器会一次创建，实际 canvas/textLayer 只在视口附近懒渲染。
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createRoot } from "react-dom/client";
 import * as pdfjsLib from "pdfjs-dist";
-import { ZoomIn, ZoomOut, AlertCircle, Loader2 } from "lucide-react";
+import { ZoomIn, ZoomOut, AlertCircle, Loader2, Download } from "lucide-react";
 import { savePdfFile } from "@/services/pdf";
-import { exportEditedPdf } from "@/services/editApi";
-import EditLayer from "./EditLayer";
-import EditToolbar from "./EditToolbar";
-import PageThumbnails from "./PageThumbnails";
-import { useEditStore } from "@/store/useEditStore";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -24,10 +17,9 @@ interface Props {
   currentPage: number;
   onPageChange?: (p: number) => void;
   suggestedName?: string;
-  pdfId: string;
 }
 
-export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName, pdfId }: Props) {
+export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
@@ -37,14 +29,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const renderedPagesRef = useRef<Set<number>>(new Set());
   const currentPageRef = useRef(currentPage);
-  const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
-  const [showPages, setShowPages] = useState(false);
-
-  const tool = useEditStore((s) => s.tool);
-  const pageOrder = useEditStore((s) => s.states[pdfId]?.pageOrder);
-  const rotations = useEditStore((s) => s.states[pdfId]?.rotations);
-  const ensureState = useEditStore((s) => s.ensureState);
-  const getEditState = useEditStore((s) => s.getEditState);
 
   const setSelection = useSelectionReporter(side);
 
@@ -63,7 +47,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         const doc = await pdfjsLib.getDocument(src as any).promise;
         if (cancelled) return;
         pdfRef.current = doc;
-        ensureState(pdfId, doc.numPages);
         setNumPages(doc.numPages);
         setLoading(false);
       } catch (e) {
@@ -85,7 +68,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
       pdfRef.current?.destroy();
       pdfRef.current = null;
     };
-  }, [data, pdfId, ensureState]);
+  }, [data]);
 
   useEffect(() => {
     const doc = pdfRef.current;
@@ -97,8 +80,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
     container.innerHTML = "";
     pageElsRef.current.clear();
     renderedPagesRef.current.clear();
-    rootsRef.current.forEach((r) => r.unmount());
-    rootsRef.current = [];
 
     const renderPage = async (pageNumber: number, pageDiv: HTMLDivElement) => {
       if (renderedPagesRef.current.has(pageNumber)) return;
@@ -106,7 +87,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
       try {
         const page = await doc.getPage(pageNumber);
         if (cancelled) return;
-        const viewport = page.getViewport({ scale, rotation: rotations?.[pageNumber] || 0 });
+        const viewport = page.getViewport({ scale });
         const canvas = pageDiv.querySelector("canvas");
         const textLayerDiv = pageDiv.querySelector<HTMLDivElement>(".textLayer");
         if (!canvas || !textLayerDiv) return;
@@ -173,19 +154,17 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           { root: container, rootMargin: "900px 0px" }
         );
 
-        const order = pageOrder && pageOrder.length ? pageOrder : Array.from({ length: doc.numPages }, (_, k) => k + 1);
-        for (const origPage of order) {
+        for (let i = 1; i <= doc.numPages; i++) {
           if (cancelled) return;
-          const page = await doc.getPage(origPage);
-          const rot = rotations?.[origPage] || 0;
-          const viewport = page.getViewport({ scale, rotation: rot });
+          const page = await doc.getPage(i);
+          const viewport = page.getViewport({ scale });
 
           const pageDiv = document.createElement("div");
           pageDiv.className = "relative mx-auto my-3 shadow bg-white";
           pageDiv.style.width = `${viewport.width}px`;
           pageDiv.style.height = `${viewport.height}px`;
           pageDiv.style.setProperty("--scale-factor", String(viewport.scale));
-          pageDiv.dataset.page = String(origPage);
+          pageDiv.dataset.page = String(i);
 
           const canvas = document.createElement("canvas");
           canvas.width = Math.ceil(viewport.width);
@@ -199,17 +178,8 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           syncPageLayerSize(pageDiv, textLayerDiv, viewport);
           pageDiv.appendChild(textLayerDiv);
 
-          // 编辑层挂载点（每页一个 React root）
-          const editMount = document.createElement("div");
-          editMount.className = "absolute inset-0";
-          editMount.style.zIndex = "2";
-          pageDiv.appendChild(editMount);
-          const editRoot = createRoot(editMount);
-          editRoot.render(<EditLayer pdfId={pdfId} pageNumber={origPage} rotation={rot} />);
-          rootsRef.current.push(editRoot);
-
           container.appendChild(pageDiv);
-          pageElsRef.current.set(origPage, pageDiv);
+          pageElsRef.current.set(i, pageDiv);
           observer.observe(pageDiv);
         }
 
@@ -234,10 +204,8 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
     return () => {
       cancelled = true;
       observer?.disconnect();
-      rootsRef.current.forEach((r) => r.unmount());
-      rootsRef.current = [];
     };
-  }, [scale, numPages, side, pageOrder, rotations, pdfId]);
+  }, [scale, numPages, side]);
 
   const onScroll = useCallback(() => {
     const container = containerRef.current;
@@ -267,14 +235,13 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
 
   const onMouseUp = useCallback(() => {
     if (side !== "left") return;
-    if (tool !== "select") return; // 编辑模式下不触发划词
     const sel = window.getSelection();
     const text = sel?.toString().trim();
     if (!text || !sel) return;
     setSelection(text, pageFromSelection(sel) ?? currentPage);
-  }, [side, currentPage, setSelection, tool]);
+  }, [side, currentPage, setSelection]);
 
-  // 导出：有编辑状态则后端 fitz 应用编辑后另存；否则直接存原字节
+  // 导出当前 PDF：源 PDF（Uint8Array）直接存；译文 PDF（URL）先 fetch 再存
   const handleExport = useCallback(async () => {
     try {
       let bytes: Uint8Array;
@@ -286,53 +253,44 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
       } else {
         bytes = data;
       }
-      const editState = getEditState(pdfId);
-      if (editState) {
-        bytes = await exportEditedPdf(bytes, editState);
-      }
       await savePdfFile(bytes, name);
     } catch (e) {
       console.error("导出失败:", e);
-      alert("导出失败：" + (e instanceof Error ? e.message : String(e)));
     }
-  }, [data, suggestedName, pdfId, getEditState]);
+  }, [data, suggestedName]);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 h-9 bg-white border-b text-sm shrink-0 overflow-x-auto">
+      <div className="flex items-center gap-2 px-3 h-9 bg-white border-b text-sm shrink-0">
         <button
           onClick={() => setScale((s) => Math.max(0.5, s - 0.15))}
-          className="p-1 hover:bg-slate-100 rounded shrink-0"
+          className="p-1 hover:bg-slate-100 rounded"
           title="缩小"
         >
           <ZoomOut size={16} />
         </button>
-        <span className="w-12 text-center shrink-0">{Math.round(scale * 100)}%</span>
+        <span className="w-12 text-center">{Math.round(scale * 100)}%</span>
         <button
           onClick={() => setScale((s) => Math.min(3, s + 0.15))}
-          className="p-1 hover:bg-slate-100 rounded shrink-0"
+          className="p-1 hover:bg-slate-100 rounded"
           title="放大"
         >
           <ZoomIn size={16} />
         </button>
-        <span className="ml-auto" />
-        <EditToolbar
-          pdfId={pdfId}
-          onExport={handleExport}
-          onTogglePages={() => setShowPages((v) => !v)}
-        />
-        <span className="text-slate-500 shrink-0">
+        <button
+          onClick={handleExport}
+          className="ml-auto flex items-center gap-1 px-2 py-1 text-slate-600 hover:bg-slate-100 rounded"
+          title="导出 PDF"
+        >
+          <Download size={15} />
+          导出
+        </button>
+        <span className="text-slate-500">
           {numPages > 0 && `第 ${currentPage} / ${numPages} 页`}
         </span>
       </div>
 
       <div className="flex-1 relative overflow-hidden">
-        {showPages && (
-          <PageThumbnails
-            pdfId={pdfId}
-            onClose={() => setShowPages(false)}
-          />
-        )}
         {loadError && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100 text-center p-6">
             <AlertCircle size={40} className="text-red-400" strokeWidth={1.5} />
