@@ -5,6 +5,9 @@ import type {
   LLMSettings,
   TextTranslateResult,
   PdfProgressEvent,
+  AnalyzeResult,
+  EditOp,
+  SaveEditsResult,
 } from "@/types";
 
 const BASE = "http://127.0.0.1:8765";
@@ -233,6 +236,49 @@ export async function streamSummary(
     }
   }
   onDone();
+}
+
+// ---- PDF 文本块编辑 ----
+
+/** 上传 PDF 解析文本块，返回 edit_id + 每页文本块 + 预测编辑模式。 */
+export async function analyzePdfForEdit(
+  file: File | Blob,
+  filename: string
+): Promise<AnalyzeResult> {
+  const form = new FormData();
+  form.append("file", file, filename);
+  const resp = await apiFetch(
+    "/api/edit/pdf/analyze",
+    { method: "POST", body: form },
+    120
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.json();
+}
+
+/** 应用编辑并另存为新 PDF，返回实际模式与友好提示。 */
+export async function savePdfEdits(
+  editId: string,
+  edits: EditOp[]
+): Promise<SaveEditsResult> {
+  const resp = await apiFetch(
+    "/api/edit/pdf/save",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ edit_id: editId, edits }),
+    },
+    120
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.json();
+}
+
+/** 拉取编辑后的新 PDF 字节（供另存 / 预览）。 */
+export async function editedPdfBytes(editId: string): Promise<Uint8Array> {
+  const resp = await apiFetch(`/api/edit/pdf/result/${editId}`, {}, 60);
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return new Uint8Array(await resp.arrayBuffer());
 }
 
 function llmHeaders(s: LLMSettings): Record<string, string> {

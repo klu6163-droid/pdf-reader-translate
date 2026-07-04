@@ -2,8 +2,8 @@
 // 状态存于当前标签页（store），切换标签可保留进度；
 // 切回正在运行的任务时按 taskId 重连 SSE。
 
-import { useCallback, useEffect } from "react";
-import { Loader2, Play, AlertCircle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Play, AlertCircle, Type } from "lucide-react";
 import {
   startPdfTranslate,
   subscribePdfProgress,
@@ -12,11 +12,31 @@ import {
 } from "@/services/api";
 import { useStore, useActiveTab } from "@/store/useSettings";
 import PDFViewer from "./PDFViewer";
+import PdfEditor from "./PdfEditor";
 import type { PdfProgressEvent, PdfTab } from "@/types";
 
 export default function FullTranslate() {
   const tab = useActiveTab();
   const updateTab = useStore((s) => s.updateTab);
+
+  // 译文编辑器：fetch 到字节后打开（null = 关闭）
+  const [editorData, setEditorData] = useState<Uint8Array | null>(null);
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [editorError, setEditorError] = useState("");
+
+  const openTranslatedEditor = useCallback(async (url: string) => {
+    setEditorLoading(true);
+    setEditorError("");
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("获取译文 PDF 失败（可能已被清理，请重新翻译）");
+      setEditorData(new Uint8Array(await resp.arrayBuffer()));
+    } catch (e) {
+      setEditorError(e instanceof Error ? e.message : "打开编辑器失败");
+    } finally {
+      setEditorLoading(false);
+    }
+  }, []);
 
   // 当前标签的翻译任务 id；变化时（启动 / 切换标签）触发订阅
   const taskId = tab?.translationTaskId ?? null;
@@ -114,6 +134,8 @@ export default function FullTranslate() {
 
   // 已有结果：显示翻译后的 PDF
   if (tab?.translatedPdfUrl) {
+    const zhName =
+      (tab.name || "translated.pdf").replace(/\.pdf$/i, "") + "-zh.pdf";
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 px-3 py-2 text-xs bg-green-50 text-green-700 border-b shrink-0">
@@ -124,6 +146,19 @@ export default function FullTranslate() {
             </span>
           )}
           <button
+            onClick={() => openTranslatedEditor(tab.translatedPdfUrl!)}
+            disabled={editorLoading}
+            className="ml-auto flex items-center gap-1 text-primary-700 hover:text-primary-900 disabled:opacity-50"
+            title="编辑译文 PDF 的文本块"
+          >
+            {editorLoading ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Type size={12} />
+            )}
+            编辑译文
+          </button>
+          <button
             onClick={() =>
               updateTab(tab.id, {
                 translatedPdfUrl: null,
@@ -131,21 +166,35 @@ export default function FullTranslate() {
                 translationMessage: "",
               })
             }
-            className="ml-auto text-slate-500 hover:text-slate-700"
+            className="text-slate-500 hover:text-slate-700"
           >
             重新翻译
           </button>
         </div>
+        {editorError && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-red-50 text-red-600 border-b shrink-0">
+            <AlertCircle size={13} className="shrink-0" />
+            <span className="flex-1">{editorError}</span>
+            <button onClick={() => setEditorError("")} className="hover:text-red-800">✕</button>
+          </div>
+        )}
         <div className="flex-1 min-h-0">
           <PDFViewer
             data={tab.translatedPdfUrl}
             side="right"
             currentPage={tab.currentPage}
-            suggestedName={
-              (tab.name || "translated.pdf").replace(/\.pdf$/i, "") + "-zh.pdf"
-            }
+            suggestedName={zhName}
           />
         </div>
+
+        {/* 译文 PDF 编辑器（全屏浮层） */}
+        {editorData && (
+          <PdfEditor
+            data={editorData}
+            name={zhName}
+            onClose={() => setEditorData(null)}
+          />
+        )}
       </div>
     );
   }

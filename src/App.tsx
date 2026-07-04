@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FileText, Settings as SettingsIcon, AlertTriangle, Upload } from "lucide-react";
+import { FileText, Settings as SettingsIcon, AlertTriangle, Upload, Type } from "lucide-react";
 import { useStore } from "@/store/useSettings";
 import { checkBackend } from "@/services/api";
 import { readPdfFile, basename, listenDragDrop } from "@/services/pdf";
@@ -9,6 +9,7 @@ import TranslationPanel from "@/components/TranslationPanel";
 import TabBar from "@/components/TabBar";
 import Settings from "@/components/Settings";
 import Splitter from "@/components/Splitter";
+import PdfEditor from "@/components/PdfEditor";
 
 export default function App() {
   const tabs = useStore((s) => s.tabs);
@@ -25,6 +26,9 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false);
   const [dropError, setDropError] = useState("");
   const recentDropRef = useRef<{ path: string; at: number } | null>(null);
+
+  // PDF 编辑器浮层开关
+  const [editorOpen, setEditorOpen] = useState(false);
 
   // 启动后轮询后端健康状态（后端由 Tauri 拉起，可能晚几秒才就绪）
   useEffect(() => {
@@ -133,6 +137,21 @@ export default function App() {
             <FileText size={16} />
             打开 PDF
           </button>
+          {activeTab && (
+            <button
+              onClick={() => setEditorOpen(true)}
+              disabled={backendStatus !== "online"}
+              title={
+                backendStatus === "online"
+                  ? "编辑当前 PDF 的文本块"
+                  : "需先连接后端才能编辑"
+              }
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-primary-600 text-primary-700 rounded hover:bg-primary-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Type size={16} />
+              编辑
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <BackendIndicator status={backendStatus} />
@@ -198,6 +217,16 @@ export default function App() {
       </div>
 
       <Settings />
+
+      {/* PDF 文本块编辑器（全屏浮层）。按 activeTab.id 重建，确保切换标签后编辑正确的 PDF。 */}
+      {editorOpen && activeTab && (
+        <PdfEditor
+          key={activeTab.id}
+          data={activeTab.pdfData}
+          name={activeTab.name}
+          onClose={() => setEditorOpen(false)}
+        />
+      )}
     </div>
   );
 }
