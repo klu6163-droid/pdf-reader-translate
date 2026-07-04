@@ -36,7 +36,7 @@ const TEXT_TOOLS: Tool[] = ["highlight", "underline", "strikeout"];
 const PALETTE = ["#ffd633", "#4caf50", "#2196f3", "#f44336", "#9c27b0", "#ff9800"];
 const TYPE_LABELS: Record<AnnotationType, string> = {
   highlight: "高亮", underline: "下划线", strikeout: "删除线",
-  note: "批注", rectangle: "矩形框", ink: "画笔",
+  note: "笔记", rectangle: "矩形框", ink: "画笔",
 };
 
 const newId = () => crypto.randomUUID().replace(/-/g, "");
@@ -54,6 +54,7 @@ export default function PdfAnnotator({ data, name, onClose }: Props) {
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState(PALETTE[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [noteEditId, setNoteEditId] = useState<string | null>(null); // 就地编辑中的笔记
   const [flashId, setFlashId] = useState<string | null>(null);
   const [scale, setScale] = useState(1.3);
   const [loading, setLoading] = useState(true);
@@ -242,12 +243,19 @@ export default function PdfAnnotator({ data, name, onClose }: Props) {
   const pickTool = useCallback((t: Tool) => {
     setTool(t);
     setSelectedId(null);
+    setNoteEditId(null);
     if (TEXT_TOOLS.includes(t) && hasTextRef.current === false) {
       setBanner({
         kind: "warn",
         text: "该 PDF 暂不支持文本选择，可以使用矩形框或画笔批注。",
       });
     }
+  }, []);
+
+  // ---- 打开笔记就地编辑气泡 ----
+  const openNoteEditor = useCallback((id: string) => {
+    setNoteEditId(id);
+    setSelectedId(null); // 笔记用气泡编辑，不再叠加左下角面板
   }, []);
 
   // ---- 批注列表跳转 ----
@@ -261,11 +269,16 @@ export default function PdfAnnotator({ data, name, onClose }: Props) {
         top: el.offsetTop + y * scale - 120,
         behavior: "smooth",
       });
-      setSelectedId(a.id);
+      if (a.type === "note") {
+        openNoteEditor(a.id);
+      } else {
+        setNoteEditId(null);
+        setSelectedId(a.id);
+      }
       setFlashId(a.id);
       window.setTimeout(() => setFlashId((cur) => (cur === a.id ? null : cur)), 1600);
     },
-    [scale]
+    [scale, openNoteEditor]
   );
 
   // ---- 保存（404 时自动重开会话重试一次）----
@@ -342,7 +355,7 @@ export default function PdfAnnotator({ data, name, onClose }: Props) {
           <ToolBtn icon={<Highlighter size={15} />} label="高亮" active={tool === "highlight"} onClick={() => pickTool("highlight")} />
           <ToolBtn icon={<Underline size={15} />} label="下划线" active={tool === "underline"} onClick={() => pickTool("underline")} />
           <ToolBtn icon={<Strikethrough size={15} />} label="删除线" active={tool === "strikeout"} onClick={() => pickTool("strikeout")} />
-          <ToolBtn icon={<StickyNote size={15} />} label="批注" active={tool === "note"} onClick={() => pickTool("note")} />
+          <ToolBtn icon={<StickyNote size={15} />} label="笔记" active={tool === "note"} onClick={() => pickTool("note")} />
           <ToolBtn icon={<Square size={15} />} label="矩形" active={tool === "rectangle"} onClick={() => pickTool("rectangle")} />
           <ToolBtn icon={<Pen size={15} />} label="画笔" active={tool === "ink"} onClick={() => pickTool("ink")} />
         </div>
@@ -456,8 +469,14 @@ export default function PdfAnnotator({ data, name, onClose }: Props) {
                   color={color}
                   annotations={annotations.filter((a) => a.page === pg.page)}
                   selectedId={selectedId}
+                  noteEditId={noteEditId}
                   flashId={flashId}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => {
+                    setNoteEditId(null);
+                    setSelectedId(id);
+                  }}
+                  onOpenNote={openNoteEditor}
+                  onCloseNote={() => setNoteEditId(null)}
                   onCreate={createAnnot}
                   onPatch={patchAnnot}
                   onRemove={removeAnnot}
@@ -487,8 +506,8 @@ export default function PdfAnnotator({ data, name, onClose }: Props) {
         )}
       </div>
 
-      {/* 选中批注的编辑气泡（浮在最上层，跟随所在页容器难做，放右下角固定面板更稳） */}
-      {selected && (
+      {/* 选中批注的编辑面板（笔记类型走页面内就地气泡，不在这里） */}
+      {selected && selected.type !== "note" && (
         <AnnotInspector
           annot={selected}
           onPatch={(p) => patchAnnot(selected.id, p)}
@@ -529,8 +548,11 @@ interface AnnotPageProps {
   color: string;
   annotations: PdfAnnotation[];
   selectedId: string | null;
+  noteEditId: string | null;
   flashId: string | null;
   onSelect: (id: string | null) => void;
+  onOpenNote: (id: string) => void;
+  onCloseNote: () => void;
   onCreate: (p: Partial<PdfAnnotation>) => PdfAnnotation;
   onPatch: (id: string, p: Partial<PdfAnnotation>) => void;
   onRemove: (id: string) => void;
@@ -539,8 +561,9 @@ interface AnnotPageProps {
 }
 
 function AnnotPage({
-  pdfDoc, info, scale, tool, color, annotations, selectedId, flashId,
-  onSelect, onCreate, registerEl, reportHasText,
+  pdfDoc, info, scale, tool, color, annotations, selectedId, noteEditId, flashId,
+  onSelect, onOpenNote, onCloseNote, onCreate, onPatch, onRemove,
+  registerEl, reportHasText,
 }: AnnotPageProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -639,7 +662,7 @@ function AnnotPage({
         page: info.page, type: "note", color,
         rect: [r2(px), r2(py), r2(px + 18), r2(py + 18)],
       });
-      onSelect(a.id);
+      onOpenNote(a.id); // 落点处直接弹输入气泡开始打字
       return;
     }
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -706,12 +729,33 @@ function AnnotPage({
           key={a.id}
           a={a}
           scale={scale}
-          selected={selectedId === a.id}
+          selected={selectedId === a.id || noteEditId === a.id}
           flash={flashId === a.id}
           interactive={overlayInteractive}
-          onSelect={() => onSelect(a.id)}
+          onSelect={() => (a.type === "note" ? onOpenNote(a.id) : onSelect(a.id))}
         />
       ))}
+
+      {/* 笔记就地输入气泡（跟随落点） */}
+      {(() => {
+        const editing = annotations.find((a) => a.id === noteEditId && a.type === "note");
+        if (!editing?.rect) return null;
+        return (
+          <NoteBubble
+            key={editing.id}
+            annot={editing}
+            scale={scale}
+            pageW={w}
+            pageH={h}
+            onPatch={(p) => onPatch(editing.id, p)}
+            onRemove={() => {
+              onRemove(editing.id);
+              onCloseNote();
+            }}
+            onClose={onCloseNote}
+          />
+        );
+      })()}
 
       {/* 绘制捕获层（note/rect/ink 激活时） */}
       {captureActive && (
@@ -883,6 +927,89 @@ function AnnotOverlay({ a, scale, selected, flash, interactive, onSelect }: {
     );
   }
   return null;
+}
+
+// ================= 笔记就地输入气泡 =================
+
+function NoteBubble({ annot, scale, pageW, pageH, onPatch, onRemove, onClose }: {
+  annot: PdfAnnotation;
+  scale: number;
+  pageW: number;
+  pageH: number;
+  onPatch: (p: Partial<PdfAnnotation>) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [x0, y0] = annot.rect!;
+  const BUBBLE_W = 240;
+  const BUBBLE_H = 150;
+  // 默认贴在图标右侧；越界则翻到左侧/上方，保证气泡完整可见
+  let left = x0 * scale + 24;
+  if (left + BUBBLE_W > pageW - 4) left = Math.max(4, x0 * scale - BUBBLE_W - 6);
+  let top = y0 * scale - 4;
+  if (top + BUBBLE_H > pageH - 4) top = Math.max(4, pageH - BUBBLE_H - 4);
+
+  // 新建时为空 → 关闭时若仍为空自动删除，避免留下无内容的孤儿便签
+  const emptyOnCloseRemoves = () => {
+    if (!annot.comment.trim()) onRemove();
+    else onClose();
+  };
+
+  return (
+    <div
+      className="absolute z-30 bg-white rounded-lg shadow-xl border border-slate-200 p-2 space-y-1.5"
+      style={{ left, top, width: BUBBLE_W }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+        <StickyNote size={13} style={{ color: annot.color }} />
+        <span>笔记 · 第 {annot.page + 1} 页</span>
+        {annot.source === "pdf" && (
+          <span className="text-[10px] px-1 bg-slate-100 text-slate-400 rounded">原有</span>
+        )}
+        <button
+          onClick={emptyOnCloseRemoves}
+          className="ml-auto text-slate-400 hover:text-slate-600"
+          title="完成"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      <textarea
+        autoFocus
+        value={annot.comment}
+        onChange={(e) => onPatch({ comment: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
+            e.preventDefault();
+            emptyOnCloseRemoves();
+          }
+        }}
+        placeholder="输入笔记内容...（Ctrl+Enter 完成）"
+        className="w-full h-20 text-sm border rounded p-1.5 resize-none outline-none focus:border-primary-400"
+      />
+      <div className="flex items-center gap-1.5">
+        {PALETTE.map((c) => (
+          <button
+            key={c}
+            onClick={() => onPatch({ color: c })}
+            className={`w-3.5 h-3.5 rounded-full border ${
+              annot.color === c ? "ring-2 ring-offset-1 ring-slate-400" : "border-slate-300"
+            }`}
+            style={{ background: c }}
+          />
+        ))}
+        <button
+          onClick={onRemove}
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-50 rounded"
+        >
+          <Trash2 size={12} />
+          删除
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ================= 选中批注的编辑面板（右下角固定）=================
