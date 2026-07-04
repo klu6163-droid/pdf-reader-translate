@@ -8,6 +8,7 @@ import PDFViewer from "@/components/PDFViewer";
 import TranslationPanel from "@/components/TranslationPanel";
 import TabBar from "@/components/TabBar";
 import Settings from "@/components/Settings";
+import Splitter from "@/components/Splitter";
 
 export default function App() {
   const tabs = useStore((s) => s.tabs);
@@ -18,6 +19,7 @@ export default function App() {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const backendStatus = useStore((s) => s.backendStatus);
   const setBackendStatus = useStore((s) => s.setBackendStatus);
+  const splitRatio = useStore((s) => s.splitRatio);
 
   // 拖放遮罩显隐 + 拖放错误提示
   const [dragOver, setDragOver] = useState(false);
@@ -166,10 +168,13 @@ export default function App() {
         <DropErrorBanner message={dropError} onDismiss={() => setDropError("")} />
       )}
 
-      {/* 主体：左右分栏 */}
+      {/* 主体：左右分栏（可拖拽调整比例） */}
       <div className="flex flex-1 min-h-0">
         {/* 左侧原始 PDF（按标签 key 重建，保证每篇独立 PDF.js 实例） */}
-        <div className="w-1/2 border-r bg-slate-200 min-w-0">
+        <div
+          className="bg-slate-200 min-w-0 shrink-0"
+          style={{ width: `${splitRatio * 100}%` }}
+        >
           {activeTab ? (
             <PDFViewer
               key={activeTab.id}
@@ -183,8 +188,10 @@ export default function App() {
           )}
         </div>
 
+        <Splitter />
+
         {/* 右侧功能面板（常驻，随激活标签重渲染） */}
-        <div className="w-1/2 bg-white min-w-0">
+        <div className="bg-white min-w-0 flex-1">
           <TranslationPanel />
         </div>
       </div>

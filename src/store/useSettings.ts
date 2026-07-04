@@ -32,6 +32,10 @@ interface AppState {
   // 后端连接状态：unknown（探测中）/ online / offline
   backendStatus: "unknown" | "online" | "offline";
   setBackendStatus: (s: "unknown" | "online" | "offline") => void;
+
+  // 左右分栏比例（左栏占比，0.2~0.8，默认 0.5）
+  splitRatio: number;
+  setSplitRatio: (r: number) => void;
 }
 
 const DEFAULT_SETTINGS: LLMSettings = {
@@ -110,11 +114,17 @@ export const useStore = create<AppState>()(
 
       backendStatus: "unknown",
       setBackendStatus: (s) => set({ backendStatus: s }),
+
+      splitRatio: 0.5,
+      setSplitRatio: (r) => set({ splitRatio: r }),
     }),
     {
       name: "pdf-translate-settings",
-      // 仅持久化 settings，PDF 数据不落盘
-      partialize: (state) => ({ settings: state.settings }),
+      // 持久化 settings + 分栏比例；PDF 数据不落盘
+      partialize: (state) => ({
+        settings: state.settings,
+        splitRatio: state.splitRatio,
+      }),
     }
   )
 );
