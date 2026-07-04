@@ -3,13 +3,14 @@
 // 切回正在运行的任务时按 taskId 重连 SSE。
 
 import { useCallback, useEffect } from "react";
-import { Loader2, Play, AlertCircle } from "lucide-react";
+import { Loader2, Play, AlertCircle, Download } from "lucide-react";
 import {
   startPdfTranslate,
   subscribePdfProgress,
   pdfResultUrl,
   bytesToPdfBlob,
 } from "@/services/api";
+import { savePdfWithAnnotations } from "@/services/annotate";
 import { useStore, useActiveTab } from "@/store/useSettings";
 import PDFViewer from "./PDFViewer";
 import type { PdfProgressEvent, PdfTab } from "@/types";
@@ -112,6 +113,20 @@ export default function FullTranslate() {
     }
   }, []);
 
+  // 导出译文 PDF（另存为副本；有标注则烧录）
+  const exportTranslated = useCallback(async () => {
+    if (!tab?.translatedPdfUrl) return;
+    try {
+      const resp = await fetch(tab.translatedPdfUrl);
+      if (!resp.ok) throw new Error("获取译文 PDF 失败");
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      const name = (tab.name || "translated.pdf").replace(/\.pdf$/i, "") + "-zh.pdf";
+      await savePdfWithAnnotations(`trans-${tab.id}`, buf, name);
+    } catch (e) {
+      console.error("导出失败:", e);
+    }
+  }, [tab?.translatedPdfUrl, tab?.name, tab?.id]);
+
   // 已有结果：显示翻译后的 PDF
   if (tab?.translatedPdfUrl) {
     return (
@@ -124,6 +139,14 @@ export default function FullTranslate() {
             </span>
           )}
           <button
+            onClick={exportTranslated}
+            className="ml-auto flex items-center gap-1 text-slate-600 hover:text-slate-800"
+            title="导出译文 PDF"
+          >
+            <Download size={14} />
+            导出
+          </button>
+          <button
             onClick={() =>
               updateTab(tab.id, {
                 translatedPdfUrl: null,
@@ -131,7 +154,7 @@ export default function FullTranslate() {
                 translationMessage: "",
               })
             }
-            className="ml-auto text-slate-500 hover:text-slate-700"
+            className="text-slate-500 hover:text-slate-700"
           >
             重新翻译
           </button>
@@ -141,6 +164,7 @@ export default function FullTranslate() {
             data={tab.translatedPdfUrl}
             side="right"
             currentPage={tab.currentPage}
+            pdfId={`trans-${tab.id}`}
           />
         </div>
       </div>

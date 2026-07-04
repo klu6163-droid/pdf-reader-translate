@@ -3,6 +3,9 @@
 import clsx from "clsx";
 import { FileText, Plus, X, Loader2 } from "lucide-react";
 import { useStore } from "@/store/useSettings";
+import { useAnnotations } from "@/store/useAnnotations";
+import { savePdfWithAnnotations } from "@/services/annotate";
+import type { PdfTab } from "@/types";
 
 const MAX_TABS = 8;
 
@@ -11,6 +14,41 @@ export default function TabBar({ onOpen }: { onOpen: () => void }) {
   const activeTabId = useStore((s) => s.activeTabId);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const closeTab = useStore((s) => s.closeTab);
+  const isDirty = useAnnotations((s) => s.isDirty);
+  const discard = useAnnotations((s) => s.discard);
+
+  // 关闭前：若有未保存标注，询问是否保留为副本
+  const handleClose = async (t: PdfTab) => {
+    const srcDirty = isDirty(t.id);
+    const transDirty = !!t.translatedPdfUrl && isDirty(`trans-${t.id}`);
+    if (srcDirty || transDirty) {
+      const keep = window.confirm(
+        "该 PDF 有未保存的标注，是否保留为副本？\n（点「取消」则丢弃标注并关闭）"
+      );
+      if (keep) {
+        try {
+          if (srcDirty) {
+            await savePdfWithAnnotations(t.id, t.pdfData, t.name);
+          }
+          if (transDirty) {
+            const resp = await fetch(t.translatedPdfUrl!);
+            const buf = new Uint8Array(await resp.arrayBuffer());
+            await savePdfWithAnnotations(
+              `trans-${t.id}`,
+              buf,
+              t.name.replace(/\.pdf$/i, "") + "-zh.pdf"
+            );
+          }
+        } catch (e) {
+          console.error("保存失败:", e);
+        }
+      } else {
+        discard(t.id);
+        discard(`trans-${t.id}`);
+      }
+    }
+    closeTab(t.id);
+  };
   const atCap = tabs.length >= MAX_TABS;
 
   return (
@@ -35,7 +73,7 @@ export default function TabBar({ onOpen }: { onOpen: () => void }) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              closeTab(t.id);
+              void handleClose(t);
             }}
             className="ml-0.5 p-0.5 rounded text-slate-400 hover:bg-slate-300/60 hover:text-slate-600"
             title="关闭"

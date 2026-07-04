@@ -19,12 +19,13 @@
     "@tauri-apps/plugin-fs": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@tauri-apps/plugin-store": "^2.0.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.400.0",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.4.168",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "zustand": "^4.5.4",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.400.0"
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
