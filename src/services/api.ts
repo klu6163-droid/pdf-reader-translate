@@ -8,6 +8,9 @@ import type {
   AnalyzeResult,
   EditOp,
   SaveEditsResult,
+  OpenAnnotResult,
+  PdfAnnotation,
+  SaveAnnotResult,
 } from "@/types";
 
 const BASE = "http://127.0.0.1:8765";
@@ -279,6 +282,102 @@ export async function editedPdfBytes(editId: string): Promise<Uint8Array> {
   const resp = await apiFetch(`/api/edit/pdf/result/${editId}`, {}, 60);
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return new Uint8Array(await resp.arrayBuffer());
+}
+
+// ---- PDF 批注 ----
+
+/** 上传 PDF 建立批注会话，返回 annot_id + 页尺寸 + PDF 内已有批注。 */
+export async function openPdfAnnot(
+  file: File | Blob,
+  filename: string
+): Promise<OpenAnnotResult> {
+  const form = new FormData();
+  form.append("file", file, filename);
+  const resp = await apiFetch("/api/annot/pdf/open", { method: "POST", body: form }, 120);
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.json();
+}
+
+/** 新增一条批注（同步到后端会话）。 */
+export async function addPdfAnnot(
+  annotId: string,
+  annot: Partial<PdfAnnotation>
+): Promise<PdfAnnotation> {
+  const resp = await apiFetch(
+    `/api/annot/pdf/${annotId}/annotations`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(annot),
+    },
+    30
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.json();
+}
+
+/** 更新批注（注释/颜色等）。 */
+export async function updatePdfAnnot(
+  annotId: string,
+  aid: string,
+  patch: Partial<PdfAnnotation>
+): Promise<PdfAnnotation> {
+  const resp = await apiFetch(
+    `/api/annot/pdf/${annotId}/annotations/${aid}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    30
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.json();
+}
+
+/** 删除批注。 */
+export async function deletePdfAnnot(annotId: string, aid: string): Promise<void> {
+  const resp = await apiFetch(
+    `/api/annot/pdf/${annotId}/annotations/${aid}`,
+    { method: "DELETE" },
+    30
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+}
+
+/** 把批注写入 PDF 副本并生成 annotated.pdf（body 传完整列表，前端为准）。 */
+export async function savePdfAnnots(
+  annotId: string,
+  annotations: PdfAnnotation[]
+): Promise<SaveAnnotResult> {
+  const resp = await apiFetch(
+    `/api/annot/pdf/${annotId}/save`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotations }),
+    },
+    120
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.json();
+}
+
+/** 拉取批注后的新 PDF 字节。 */
+export async function annotatedPdfBytes(annotId: string): Promise<Uint8Array> {
+  const resp = await apiFetch(`/api/annot/pdf/${annotId}/result`, {}, 60);
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return new Uint8Array(await resp.arrayBuffer());
+}
+
+/** 导出批注列表（json / markdown），返回文本内容。 */
+export async function exportPdfAnnots(
+  annotId: string,
+  format: "json" | "markdown"
+): Promise<string> {
+  const resp = await apiFetch(`/api/annot/pdf/${annotId}/export?format=${format}`, {}, 30);
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  return resp.text();
 }
 
 function llmHeaders(s: LLMSettings): Record<string, string> {

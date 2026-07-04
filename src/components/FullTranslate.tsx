@@ -3,7 +3,7 @@
 // 切回正在运行的任务时按 taskId 重连 SSE。
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Play, AlertCircle, Type } from "lucide-react";
+import { Loader2, Play, AlertCircle, Type, Highlighter } from "lucide-react";
 import {
   startPdfTranslate,
   subscribePdfProgress,
@@ -13,26 +13,27 @@ import {
 import { useStore, useActiveTab } from "@/store/useSettings";
 import PDFViewer from "./PDFViewer";
 import PdfEditor from "./PdfEditor";
+import PdfAnnotator from "./PdfAnnotator";
 import type { PdfProgressEvent, PdfTab } from "@/types";
 
 export default function FullTranslate() {
   const tab = useActiveTab();
   const updateTab = useStore((s) => s.updateTab);
 
-  // 译文编辑器：fetch 到字节后打开（null = 关闭）
-  const [editorData, setEditorData] = useState<Uint8Array | null>(null);
+  // 译文编辑/批注器：fetch 到字节后打开（null = 关闭）
+  const [overlay, setOverlay] = useState<{ kind: "edit" | "annot"; data: Uint8Array } | null>(null);
   const [editorLoading, setEditorLoading] = useState(false);
   const [editorError, setEditorError] = useState("");
 
-  const openTranslatedEditor = useCallback(async (url: string) => {
+  const openTranslatedOverlay = useCallback(async (url: string, kind: "edit" | "annot") => {
     setEditorLoading(true);
     setEditorError("");
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error("获取译文 PDF 失败（可能已被清理，请重新翻译）");
-      setEditorData(new Uint8Array(await resp.arrayBuffer()));
+      setOverlay({ kind, data: new Uint8Array(await resp.arrayBuffer()) });
     } catch (e) {
-      setEditorError(e instanceof Error ? e.message : "打开编辑器失败");
+      setEditorError(e instanceof Error ? e.message : "打开失败");
     } finally {
       setEditorLoading(false);
     }
@@ -146,7 +147,7 @@ export default function FullTranslate() {
             </span>
           )}
           <button
-            onClick={() => openTranslatedEditor(tab.translatedPdfUrl!)}
+            onClick={() => openTranslatedOverlay(tab.translatedPdfUrl!, "edit")}
             disabled={editorLoading}
             className="ml-auto flex items-center gap-1 text-primary-700 hover:text-primary-900 disabled:opacity-50"
             title="编辑译文 PDF 的文本块"
@@ -157,6 +158,15 @@ export default function FullTranslate() {
               <Type size={12} />
             )}
             编辑译文
+          </button>
+          <button
+            onClick={() => openTranslatedOverlay(tab.translatedPdfUrl!, "annot")}
+            disabled={editorLoading}
+            className="flex items-center gap-1 text-amber-600 hover:text-amber-800 disabled:opacity-50"
+            title="为译文 PDF 添加批注"
+          >
+            <Highlighter size={12} />
+            批注译文
           </button>
           <button
             onClick={() =>
@@ -187,12 +197,19 @@ export default function FullTranslate() {
           />
         </div>
 
-        {/* 译文 PDF 编辑器（全屏浮层） */}
-        {editorData && (
+        {/* 译文 PDF 编辑/批注器（全屏浮层） */}
+        {overlay?.kind === "edit" && (
           <PdfEditor
-            data={editorData}
+            data={overlay.data}
             name={zhName}
-            onClose={() => setEditorData(null)}
+            onClose={() => setOverlay(null)}
+          />
+        )}
+        {overlay?.kind === "annot" && (
+          <PdfAnnotator
+            data={overlay.data}
+            name={zhName}
+            onClose={() => setOverlay(null)}
           />
         )}
       </div>

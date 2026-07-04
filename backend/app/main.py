@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import translate, pdf_trans, summary, pdf_edit
+from app.api import translate, pdf_trans, summary, pdf_edit, pdf_annot
 
 # 后端不走系统代理，直连用户配置的 base_url。
 # 避免 httpx 自动套用系统代理（Clash/V2Ray 等）导致 TLS 握手失败；
@@ -46,6 +46,7 @@ app.include_router(translate.router)
 app.include_router(pdf_trans.router)
 app.include_router(summary.router)
 app.include_router(pdf_edit.router)
+app.include_router(pdf_annot.router)
 
 
 @app.get("/api/health")

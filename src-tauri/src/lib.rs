@@ -61,8 +61,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // 关闭窗口时终止后端进程
+            // 注意：必须在 Destroyed（真正销毁）而非 CloseRequested（关闭请求）时杀后端。
+            // 前端会拦截 CloseRequested 弹「是否保留批注」，若在请求阶段就杀后端，
+            // 用户点「取消」继续用时后端已经没了。
+            if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = window.try_state::<BackendProcess>() {
                     if let Ok(mut child) = state.0.lock() {
                         if let Some(proc) = child.take() {

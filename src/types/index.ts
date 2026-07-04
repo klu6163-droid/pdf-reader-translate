@@ -58,6 +58,54 @@ export interface AnalyzeResult {
   pages: EditPage[];
 }
 
+// ---- PDF 批注 ----
+
+export type AnnotationType =
+  | "highlight"
+  | "underline"
+  | "strikeout"
+  | "note"
+  | "rectangle"
+  | "ink";
+
+// 单条批注（前后端一致；坐标为 PDF 点，左上原点）
+export interface PdfAnnotation {
+  id: string;
+  page: number; // 0-based
+  type: AnnotationType;
+  text: string; // 文本类批注选中的原文摘录
+  comment: string; // 用户注释
+  color: string; // #rrggbb
+  rect?: [number, number, number, number] | null; // note 锚点 / rectangle 框
+  quads?: [number, number, number, number][] | null; // 文本类逐行矩形
+  ink?: [number, number][][] | null; // 画笔笔迹（每笔一条点列）
+  created_at?: string;
+  updated_at?: string;
+  source?: "user" | "pdf"; // pdf = 从原 PDF 导入的已有批注
+  xref?: number | null;
+}
+
+export interface AnnotPageInfo {
+  page: number;
+  width: number;
+  height: number;
+}
+
+export interface OpenAnnotResult {
+  annot_id: string;
+  page_count: number;
+  pages: AnnotPageInfo[];
+  annotations: PdfAnnotation[];
+}
+
+export interface SaveAnnotResult {
+  ok: boolean;
+  written: number;
+  skipped: number;
+  deleted_existing: number;
+  message: string;
+}
+
 // 一次编辑操作（只发送有改动的块）
 export interface EditOp {
   id: string;

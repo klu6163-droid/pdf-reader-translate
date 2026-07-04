@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FileText, Settings as SettingsIcon, AlertTriangle, Upload, Type } from "lucide-react";
+import { FileText, Settings as SettingsIcon, AlertTriangle, Upload, Type, Highlighter } from "lucide-react";
 import { useStore } from "@/store/useSettings";
 import { checkBackend } from "@/services/api";
 import { readPdfFile, basename, listenDragDrop } from "@/services/pdf";
@@ -10,6 +10,12 @@ import TabBar from "@/components/TabBar";
 import Settings from "@/components/Settings";
 import Splitter from "@/components/Splitter";
 import PdfEditor from "@/components/PdfEditor";
+import PdfAnnotator from "@/components/PdfAnnotator";
+import {
+  hasDirtyStash,
+  persistStash,
+  discardDirtyStash,
+} from "@/services/annotStash";
 
 export default function App() {
   const tabs = useStore((s) => s.tabs);
@@ -27,8 +33,48 @@ export default function App() {
   const [dropError, setDropError] = useState("");
   const recentDropRef = useRef<{ path: string; at: number } | null>(null);
 
-  // PDF 编辑器浮层开关
+  // PDF 编辑器 / 批注器浮层开关
   const [editorOpen, setEditorOpen] = useState(false);
+  const [annotOpen, setAnnotOpen] = useState(false);
+
+  // 退出确认：有未保留的批注改动时，关窗前询问是否保留
+  const [exitAskOpen, setExitAskOpen] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        unlisten = await getCurrentWindow().onCloseRequested((event) => {
+          if (hasDirtyStash()) {
+            event.preventDefault();
+            setExitAskOpen(true);
+          }
+        });
+      } catch {
+        // 非 Tauri（浏览器 dev）：退化为直接持久化，不打断关闭
+        const handler = () => {
+          if (hasDirtyStash()) persistStash();
+        };
+        window.addEventListener("beforeunload", handler);
+        unlisten = () => window.removeEventListener("beforeunload", handler);
+      }
+    })();
+    return () => unlisten?.();
+  }, []);
+
+  const finishExit = useCallback(async (keep: boolean) => {
+    if (keep) persistStash();
+    else discardDirtyStash();
+    setExitAskOpen(false);
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      // destroy 跳过 CloseRequested，直接销毁（Rust 侧在 Destroyed 时清理后端）
+      await getCurrentWindow().destroy();
+    } catch {
+      window.close();
+    }
+  }, []);
 
   // 启动后轮询后端健康状态（后端由 Tauri 拉起，可能晚几秒才就绪）
   useEffect(() => {
@@ -152,6 +198,21 @@ export default function App() {
               编辑
             </button>
           )}
+          {activeTab && (
+            <button
+              onClick={() => setAnnotOpen(true)}
+              disabled={backendStatus !== "online"}
+              title={
+                backendStatus === "online"
+                  ? "为当前 PDF 添加批注（高亮/下划线/便签/画笔）"
+                  : "需先连接后端才能批注"
+              }
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-amber-500 text-amber-600 rounded hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Highlighter size={16} />
+              批注
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <BackendIndicator status={backendStatus} />
@@ -226,6 +287,52 @@ export default function App() {
           name={activeTab.name}
           onClose={() => setEditorOpen(false)}
         />
+      )}
+
+      {/* PDF 批注器（全屏浮层） */}
+      {annotOpen && activeTab && (
+        <PdfAnnotator
+          key={activeTab.id}
+          data={activeTab.pdfData}
+          name={activeTab.name}
+          onClose={() => setAnnotOpen(false)}
+        />
+      )}
+
+      {/* 退出确认：是否保留本次批注 */}
+      {exitAskOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50">
+          <div className="w-96 bg-white rounded-lg shadow-xl p-5 space-y-4">
+            <h3 className="font-semibold text-slate-800">保留批注？</h3>
+            <p className="text-sm text-slate-600">
+              本次会话中有批注改动尚未写入 PDF。是否保留这些批注，
+              以便下次打开软件继续编辑？
+            </p>
+            <p className="text-xs text-slate-400">
+              保留：下次打开同一 PDF 的批注时自动恢复。不保留：仅丢弃本次改动。
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setExitAskOpen(false)}
+                className="px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 rounded"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => finishExit(false)}
+                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
+              >
+                不保留并退出
+              </button>
+              <button
+                onClick={() => finishExit(true)}
+                className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
+              >
+                保留并退出
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
