@@ -28,26 +28,6 @@ export interface SelectionInfo {
   page: number;
 }
 
-// 标注工具
-export type AnnotationTool = "select" | "highlight" | "note" | "draw";
-
-// 单条标注。坐标一律用页面相对值（0~1），与缩放无关，渲染时乘页面像素尺寸。
-export interface Annotation {
-  id: string;
-  type: "highlight" | "note" | "draw";
-  page: number; // 1-based
-  color: string;
-  // highlight: 矩形（左上角 + 宽高）
-  x?: number;
-  y?: number;
-  w?: number;
-  h?: number;
-  // note: 文字内容
-  text?: string;
-  // draw: 自由绘制点序列
-  points?: { x: number; y: number }[];
-}
-
 // 一个打开的 PDF 标签页：持有自己的 PDF 数据与三大功能的状态，
 // 切换标签页时各自的状态独立保留。
 export interface PdfTab {

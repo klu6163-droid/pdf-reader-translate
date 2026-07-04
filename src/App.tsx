@@ -182,7 +182,6 @@ export default function App() {
               side="left"
               currentPage={activeTab.currentPage}
               onPageChange={(p) => updateTab(activeTab.id, { currentPage: p })}
-              pdfId={activeTab.id}
             />
           ) : (
             <EmptyHint onOpen={openPdf} />

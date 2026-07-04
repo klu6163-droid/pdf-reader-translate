@@ -2,12 +2,8 @@
 // 页面容器会一次创建，实际 canvas/textLayer 只在视口附近懒渲染。
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createRoot } from "react-dom/client";
 import * as pdfjsLib from "pdfjs-dist";
 import { ZoomIn, ZoomOut, AlertCircle, Loader2 } from "lucide-react";
-import AnnotationLayer from "./AnnotationLayer";
-import AnnotationToolbar from "./AnnotationToolbar";
-import { useAnnotations } from "@/store/useAnnotations";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -19,10 +15,9 @@ interface Props {
   side: "left" | "right";
   currentPage: number;
   onPageChange?: (p: number) => void;
-  pdfId: string;
 }
 
-export default function PDFViewer({ data, side, currentPage, onPageChange, pdfId }: Props) {
+export default function PDFViewer({ data, side, currentPage, onPageChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
@@ -32,8 +27,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, pdfId
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const renderedPagesRef = useRef<Set<number>>(new Set());
   const currentPageRef = useRef(currentPage);
-  const tool = useAnnotations((s) => s.tool);
-  const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
 
   const setSelection = useSelectionReporter(side);
 
@@ -183,15 +176,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, pdfId
           syncPageLayerSize(pageDiv, textLayerDiv, viewport);
           pageDiv.appendChild(textLayerDiv);
 
-          // 标注层挂载点（每页一个 React root，承载 AnnotationLayer）
-          const annMount = document.createElement("div");
-          annMount.className = "absolute inset-0";
-          annMount.style.zIndex = "2";
-          pageDiv.appendChild(annMount);
-          const annRoot = createRoot(annMount);
-          annRoot.render(<AnnotationLayer pdfId={pdfId} pageNumber={i} />);
-          rootsRef.current.push(annRoot);
-
           container.appendChild(pageDiv);
           pageElsRef.current.set(i, pageDiv);
           observer.observe(pageDiv);
@@ -218,8 +202,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, pdfId
     return () => {
       cancelled = true;
       observer?.disconnect();
-      rootsRef.current.forEach((r) => r.unmount());
-      rootsRef.current = [];
     };
   }, [scale, numPages, side]);
 
@@ -251,12 +233,11 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, pdfId
 
   const onMouseUp = useCallback(() => {
     if (side !== "left") return;
-    if (tool !== "select") return; // 标注模式下不触发划词
     const sel = window.getSelection();
     const text = sel?.toString().trim();
     if (!text || !sel) return;
     setSelection(text, pageFromSelection(sel) ?? currentPage);
-  }, [side, currentPage, setSelection, tool]);
+  }, [side, currentPage, setSelection]);
 
   return (
     <div className="flex flex-col h-full">
@@ -276,8 +257,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, pdfId
         >
           <ZoomIn size={16} />
         </button>
-        <span className="w-px h-5 bg-slate-200 mx-1" />
-        <AnnotationToolbar pdfId={pdfId} />
         <span className="ml-auto text-slate-500">
           {numPages > 0 && `第 ${currentPage} / ${numPages} 页`}
         </span>

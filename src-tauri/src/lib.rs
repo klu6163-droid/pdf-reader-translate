@@ -23,23 +23,6 @@ fn read_pdf_file(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("读取文件失败：{e}"))
 }
 
-/// 把字节数组写入本地文件（用于导出/另存 PDF）。
-/// 前端通过 invoke("write_file", { path, data }) 调用。
-/// 只允许 .pdf 后缀，与 read_pdf_file 对称。
-#[tauri::command]
-fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    if ext != "pdf" {
-        return Err(format!("不支持的文件类型：{ext}，仅支持保存 PDF"));
-    }
-    std::fs::write(&path, &data).map_err(|e| format!("写入文件失败：{e}"))
-}
-
 /// 保存 Python 子进程句柄，应用退出时一并关闭
 struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
@@ -49,7 +32,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![read_pdf_file, write_file])
+        .invoke_handler(tauri::generate_handler![read_pdf_file])
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
             // 启动 Python 后端 sidecar（开发阶段直接用系统 Python）
