@@ -3,7 +3,7 @@
 #
 # PDF2ZH_EXCLUDE = False（阶段B）：打包 pdf2zh，全文翻译保留排版。
 #   依赖 onnxruntime/cv2/pymupdf/babeldoc 等原生库，体积约 200MB+。
-# PDF2ZH_EXCLUDE = True（阶段A）：排除 pdf2zh，全文翻译走降级纯文本模式，体积约 58MB。
+# PDF2ZH_EXCLUDE = True（阶段A）：排除 pdf2zh，全文翻译走降级覆盖翻译模式，体积约 58MB。
 
 import sys
 from pathlib import Path

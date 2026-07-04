@@ -6,7 +6,7 @@
    遇到因 PDF 字体/结构问题（CIDFontType2、subset_fonts、invalid literal for int()
    等）失败时，按序自动降级：
      normal → babeldoc 后端 → skip_subset_fonts → compatible+skip_subset_fonts
-     → 修复 PDF 后重试 → 纯文本译文模式
+     → 修复 PDF 后重试 → 覆盖翻译模式
    底层错误不直接展示给用户，只下发友好提示。
 
 所有长任务通过异步生成器 yield 进度，交由路由层转成 SSE。
@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -124,6 +125,20 @@ def _find_output(out_dir: str, pdf_path: str) -> Optional[str]:
     return None
 
 
+def _prepare_pdf2zh_input(pdf_path: str, out_dir: str) -> str:
+    """给 pdf2zh 一个可删除的输入副本，避免它清理掉原始上传文件。
+
+    pdf2zh 1.9.x 会删除位于 tempfile.gettempdir() 下的输入文件。我们的上传文件也在
+    %TEMP% 下，所以每次尝试都复制一份给 pdf2zh 使用，原文件留给后续 fallback。
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    attempt_path = os.path.join(out_dir, os.path.basename(pdf_path))
+    if os.path.abspath(attempt_path) == os.path.abspath(pdf_path):
+        return pdf_path
+    shutil.copy2(pdf_path, attempt_path)
+    return attempt_path
+
+
 def _log_attempt(mode: str, duration: float, ok: bool, error: Optional[str]) -> None:
     _logger.info(
         "[pdf2zh attempt] mode=%s duration=%.1fs ok=%s error=%s",
@@ -170,18 +185,19 @@ async def run_pdf2zh_cli(
     """
     os.makedirs(out_dir, exist_ok=True)
     _clean_stale_outputs(out_dir, pdf_path)
+    attempt_path = _prepare_pdf2zh_input(pdf_path, out_dir)
     start = time.monotonic()
     try:
         if mode == "babeldoc":
             result_path = await asyncio.wait_for(
-                _run_babeldoc(pdf_path, out_dir, config, target_lang),
+                _run_babeldoc(attempt_path, out_dir, config, target_lang),
                 timeout=timeout,
             )
         else:
             from pdf2zh import translate  # 延迟导入，配合 find_spec
 
             kwargs = dict(
-                files=[pdf_path],
+                files=[attempt_path],
                 output=out_dir,
                 lang_in="",
                 lang_out=target_lang,
@@ -364,6 +380,220 @@ def _which_first(names: list) -> Optional[str]:
     return None
 
 
+# ---------- 覆盖译文模式（最终兜底）----------
+
+def _overlay_font_path() -> Optional[str]:
+    """返回可嵌入 PDF 的中文字体路径。"""
+    candidates = (
+        r"C:\Windows\Fonts\msyh.ttc",      # Microsoft YaHei
+        r"C:\Windows\Fonts\simsun.ttc",    # SimSun
+        r"C:\Windows\Fonts\simhei.ttf",    # SimHei
+        r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
+        r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf",
+        r"C:\Windows\Fonts\STSONG.TTF",
+    )
+    for font_path in candidates:
+        if os.path.exists(font_path):
+            return font_path
+    return None
+
+
+def _page_text_blocks(page) -> list[tuple[object, str]]:
+    """提取适合覆盖翻译的文本块；图片内容保持原样。"""
+    import fitz
+
+    blocks: list[tuple[object, str]] = []
+    page_rect = page.rect
+    for raw in page.get_text("blocks"):
+        if len(raw) < 5:
+            continue
+        block_type = raw[6] if len(raw) > 6 else 0
+        if block_type != 0:
+            continue
+        text = _clean_overlay_text(str(raw[4]))
+        rect = fitz.Rect(raw[:4])
+        if _skip_overlay_text(text, rect, page_rect):
+            continue
+        blocks.append((rect, text))
+    return blocks
+
+
+def _clean_overlay_text(text: str) -> str:
+    return "\n".join(line.strip() for line in text.splitlines() if line.strip()).strip()
+
+
+def _skip_overlay_text(text: str, rect, page_rect) -> bool:
+    if not text:
+        return True
+    compact = text.replace(" ", "")
+    if len(compact) <= 1:
+        return True
+    if compact.isdigit() and rect.height < 20 and (
+        rect.y0 < page_rect.height * 0.12 or rect.y1 > page_rect.height * 0.88
+    ):
+        return True
+    # 很短的符号/编号多半是页眉页脚或图内标号，先不覆盖，降低误伤 figure 的概率。
+    if len(compact) <= 3 and all(ch in "0123456789.,;:()[]{}-/" for ch in compact):
+        return True
+    return False
+
+
+async def _translate_overlay_blocks(svc: LLMService, texts: list[str]) -> list[str]:
+    """按页批量翻译文本块，要求 LLM 返回等长 JSON 数组。"""
+    if not texts:
+        return []
+
+    system = (
+        "你是专业的学术 PDF 覆盖翻译器。用户会给出一个 JSON 字符串数组，"
+        "每个元素是一块 PDF 页面文本。请逐项忠实翻译成中文，保持数组长度和顺序完全一致。"
+        "保留数字、单位、公式、变量、缩写、材料名称、引用编号和专有名词；只翻译，不解释。"
+        "严格只返回 JSON 数组，不要返回 Markdown，不要添加原文没有的信息。"
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(texts, ensure_ascii=False)},
+    ]
+    try:
+        reply = await svc.chat(messages, temperature=0.1, timeout=180.0)
+        parsed = _parse_json_string_array(reply)
+        if len(parsed) == len(texts):
+            return parsed
+        _logger.info("覆盖翻译 JSON 数量不匹配: expected=%s got=%s", len(texts), len(parsed))
+    except Exception as e:  # noqa: BLE001
+        _logger.info("覆盖翻译批量调用失败，改为逐块翻译: %s", e)
+
+    translated: list[str] = []
+    for text in texts:
+        try:
+            translated.append(await svc.translate(text, target_lang="中文"))
+        except Exception as e:  # noqa: BLE001
+            translated.append(f"[本块翻译失败: {e}]")
+    return translated
+
+
+def _parse_json_string_array(reply: str) -> list[str]:
+    data = reply.strip()
+    if not data.startswith("["):
+        start = data.find("[")
+        end = data.rfind("]")
+        if start >= 0 and end > start:
+            data = data[start:end + 1]
+    obj = json.loads(data)
+    if not isinstance(obj, list):
+        return []
+    return [str(item) for item in obj]
+
+
+def _fit_overlay_font_size(text: str, rect) -> float:
+    """估算能放进原文本块的中文字号。"""
+    if not text:
+        return 6.0
+    for size in (9.5, 8.5, 7.5, 6.5, 5.5, 4.8):
+        chars_per_line = max(4, int(rect.width / max(size * 0.72, 1)))
+        lines = sum(max(1, (len(line) + chars_per_line - 1) // chars_per_line)
+                    for line in text.splitlines() or [text])
+        if lines * size * 1.22 <= rect.height:
+            return size
+    return 4.8
+
+
+def _draw_overlay_text(page, rect, text: str, font_name: str) -> None:
+    import fitz
+
+    page_rect = page.rect
+    bg = fitz.Rect(
+        max(page_rect.x0, rect.x0 - 1.2),
+        max(page_rect.y0, rect.y0 - 1.2),
+        min(page_rect.x1, rect.x1 + 1.2),
+        min(page_rect.y1, rect.y1 + 1.2),
+    )
+    target = fitz.Rect(bg.x0 + 1.5, bg.y0 + 1.0, bg.x1 - 1.5, bg.y1 - 1.0)
+    if target.is_empty or target.width < 8 or target.height < 6:
+        return
+
+    page.draw_rect(bg, color=None, fill=(1, 1, 1), fill_opacity=0.96, overlay=True)
+    for size in (_fit_overlay_font_size(text, target), 8.0, 7.0, 6.0, 5.0, 4.5):
+        rc = page.insert_textbox(
+            target,
+            text,
+            fontname=font_name,
+            fontsize=size,
+            lineheight=1.05,
+            color=(0, 0, 0),
+            overlay=True,
+        )
+        if rc >= -0.1:
+            return
+        # 没放下时用白底重盖上一轮尝试，再缩小字号。
+        page.draw_rect(bg, color=None, fill=(1, 1, 1), fill_opacity=0.96, overlay=True)
+
+
+async def generate_overlay_translation(
+    pdf_path: str,
+    out_dir: str,
+    config: LLMConfig,
+) -> AsyncGenerator[TranslateProgress, None]:
+    """覆盖译文 PDF：保留原页面图像/figure，只覆盖可识别文本块。"""
+    yield TranslateProgress(0.65, "切换为覆盖翻译模式...", mode="fallback")
+
+    try:
+        import fitz
+    except Exception as e:  # noqa: BLE001
+        _logger.info("PyMuPDF 不可用，改为纯文本译文模式: %s", e)
+        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+            yield p
+        return
+
+    font_path = _overlay_font_path()
+    if not font_path:
+        _logger.info("未找到可嵌入中文字体，改为纯文本译文模式")
+        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+            yield p
+        return
+
+    os.makedirs(out_dir, exist_ok=True)
+    base = os.path.splitext(os.path.basename(pdf_path))[0]
+    result_path = os.path.join(out_dir, f"{base}-zh.pdf")
+    svc = LLMService(config)
+    doc = fitz.open(pdf_path)
+    total = max(len(doc), 1)
+    font_name = "AppOverlayCJK"
+
+    try:
+        for i, page in enumerate(doc):
+            blocks = _page_text_blocks(page)
+            texts = [text for _, text in blocks]
+            translations = await _translate_overlay_blocks(svc, texts)
+            try:
+                page.insert_font(fontname=font_name, fontfile=font_path)
+            except Exception as e:  # noqa: BLE001
+                _logger.info("注册覆盖字体失败: %s", e)
+                raise
+            for (rect, _), zh in zip(blocks, translations):
+                if zh.strip():
+                    _draw_overlay_text(page, rect, zh.strip(), font_name)
+            yield TranslateProgress(
+                0.65 + (i + 1) / total * 0.33,
+                f"覆盖翻译第 {i + 1}/{total} 页...",
+                mode="fallback",
+            )
+
+        try:
+            doc.subset_fonts()
+        except Exception as e:  # noqa: BLE001
+            _logger.info("覆盖译文 PDF 字体子集化失败，继续保存: %s", e)
+        doc.save(result_path, garbage=4, deflate=True)
+    finally:
+        doc.close()
+
+    yield TranslateProgress(
+        1.0,
+        "完整排版翻译失败，已切换为覆盖翻译模式（figure 保留原样）",
+        done=True,
+        result_path=result_path,
+        mode="fallback",
+    )
+
 # ---------- 纯文本译文模式（最终兜底）----------
 
 async def generate_text_only_translation(
@@ -425,8 +655,8 @@ async def translate_pdf_with_fallback(
     try:
         model = await asyncio.to_thread(_ensure_model)
     except Exception as e:  # noqa: BLE001
-        _logger.warning("模型加载失败，直接纯文本: %s", e)
-        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+        _logger.warning("模型加载失败，直接覆盖翻译: %s", e)
+        async for p in generate_overlay_translation(pdf_path, out_dir, config):
             yield p
         return
 
@@ -480,8 +710,8 @@ async def translate_pdf_with_fallback(
             except OSError:
                 pass
 
-    # 9. 全失败 → 纯文本译文模式
-    async for p in generate_text_only_translation(pdf_path, out_dir, config):
+    # 9. 全失败 → 覆盖翻译模式
+    async for p in generate_overlay_translation(pdf_path, out_dir, config):
         yield p
 
 
@@ -498,11 +728,43 @@ async def translate_pdf(
         async for p in translate_pdf_with_fallback(pdf_path, out_dir, config, target_lang):
             yield p
     else:
-        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+        async for p in generate_overlay_translation(pdf_path, out_dir, config):
             yield p
 
 
 # ---------- 纯文本 PDF 生成（降级模式用）----------
+
+
+def _register_text_pdf_font() -> str:
+    """注册可被 pdf.js 稳定渲染的中文字体。"""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    font_name = "AppFallbackCJK"
+    candidates = (
+        (r"C:\Windows\Fonts\msyh.ttc", 0),      # Microsoft YaHei
+        (r"C:\Windows\Fonts\simsun.ttc", 0),    # SimSun
+        (r"C:\Windows\Fonts\simhei.ttf", 0),    # SimHei
+        (r"C:\Windows\Fonts\NotoSansSC-VF.ttf", 0),
+        (r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf", 0),
+        (r"C:\Windows\Fonts\STSONG.TTF", 0),
+    )
+    for font_path, subfont_index in candidates:
+        if not os.path.exists(font_path):
+            continue
+        try:
+            pdfmetrics.registerFont(
+                TTFont(font_name, font_path, subfontIndex=subfont_index)
+            )
+            return font_name
+        except Exception as e:  # noqa: BLE001
+            _logger.info("注册降级 PDF 字体失败 %s: %s", font_path, e)
+
+    # 最后兜底：可提取文字，但部分 pdf.js 环境可能需要 CMap 才能显示。
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    return "STSong-Light"
+
 
 def _write_text_pdf(pages: list[str], out_path: str) -> None:
     """把逐页文本写成一个简单 PDF（降级模式用）。
@@ -513,19 +775,17 @@ def _write_text_pdf(pages: list[str], out_path: str) -> None:
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
-        pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+        font_name = _register_text_pdf_font()
         c = canvas.Canvas(out_path, pagesize=A4)
         width, height = A4
         for page_text in pages:
-            c.setFont("STSong-Light", 10)
+            c.setFont(font_name, 10)
             y = height - 40
             for line in _wrap_lines(page_text, 90):
                 if y < 40:
                     c.showPage()
-                    c.setFont("STSong-Light", 10)
+                    c.setFont(font_name, 10)
                     y = height - 40
                 c.drawString(40, y, line)
                 y -= 14

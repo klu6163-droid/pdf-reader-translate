@@ -5,5 +5,6 @@ python-multipart==0.0.12
 httpx==0.27.2
 pypdf==5.0.1
 reportlab==4.2.2
+PyMuPDF==1.25.2
 # PDF 全文翻译（可选，未安装时全文翻译会走降级实现）
 # pdf2zh==1.9.6
