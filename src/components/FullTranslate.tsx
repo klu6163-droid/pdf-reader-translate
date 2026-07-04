@@ -144,6 +144,7 @@ export default function FullTranslate() {
             suggestedName={
               (tab.name || "translated.pdf").replace(/\.pdf$/i, "") + "-zh.pdf"
             }
+            pdfId={`trans-${tab.id}`}
           />
         </div>
       </div>
