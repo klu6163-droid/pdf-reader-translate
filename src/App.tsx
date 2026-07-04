@@ -182,6 +182,7 @@ export default function App() {
               side="left"
               currentPage={activeTab.currentPage}
               onPageChange={(p) => updateTab(activeTab.id, { currentPage: p })}
+              suggestedName={activeTab.name}
             />
           ) : (
             <EmptyHint onOpen={openPdf} />

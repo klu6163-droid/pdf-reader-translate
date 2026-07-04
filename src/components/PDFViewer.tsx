@@ -3,7 +3,8 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import { ZoomIn, ZoomOut, AlertCircle, Loader2 } from "lucide-react";
+import { ZoomIn, ZoomOut, AlertCircle, Loader2, Download } from "lucide-react";
+import { savePdfFile } from "@/services/pdf";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -15,9 +16,10 @@ interface Props {
   side: "left" | "right";
   currentPage: number;
   onPageChange?: (p: number) => void;
+  suggestedName?: string;
 }
 
-export default function PDFViewer({ data, side, currentPage, onPageChange }: Props) {
+export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
@@ -239,6 +241,24 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
     setSelection(text, pageFromSelection(sel) ?? currentPage);
   }, [side, currentPage, setSelection]);
 
+  // 导出当前 PDF：源 PDF（Uint8Array）直接存；译文 PDF（URL）先 fetch 再存
+  const handleExport = useCallback(async () => {
+    try {
+      let bytes: Uint8Array;
+      const name = suggestedName || "document.pdf";
+      if (typeof data === "string") {
+        const resp = await fetch(data);
+        if (!resp.ok) throw new Error("获取 PDF 失败");
+        bytes = new Uint8Array(await resp.arrayBuffer());
+      } else {
+        bytes = data;
+      }
+      await savePdfFile(bytes, name);
+    } catch (e) {
+      console.error("导出失败:", e);
+    }
+  }, [data, suggestedName]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 h-9 bg-white border-b text-sm shrink-0">
@@ -257,7 +277,15 @@ export default function PDFViewer({ data, side, currentPage, onPageChange }: Pro
         >
           <ZoomIn size={16} />
         </button>
-        <span className="ml-auto text-slate-500">
+        <button
+          onClick={handleExport}
+          className="ml-auto flex items-center gap-1 px-2 py-1 text-slate-600 hover:bg-slate-100 rounded"
+          title="导出 PDF"
+        >
+          <Download size={15} />
+          导出
+        </button>
+        <span className="text-slate-500">
           {numPages > 0 && `第 ${currentPage} / ${numPages} 页`}
         </span>
       </div>

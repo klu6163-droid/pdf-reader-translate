@@ -141,6 +141,9 @@ export default function FullTranslate() {
             data={tab.translatedPdfUrl}
             side="right"
             currentPage={tab.currentPage}
+            suggestedName={
+              (tab.name || "translated.pdf").replace(/\.pdf$/i, "") + "-zh.pdf"
+            }
           />
         </div>
       </div>
