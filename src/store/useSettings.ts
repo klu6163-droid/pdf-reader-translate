@@ -63,12 +63,6 @@ function createTab(data: Uint8Array, name: string): PdfTab {
     lastSelection: null,
     lastTranslated: "",
     lastTranslateError: "",
-    structTaskId: null,
-    structRunning: false,
-    structProgress: 0,
-    structMessage: "",
-    structResult: null,
-    structError: "",
   };
 }
 

@@ -2,18 +2,16 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Languages, FileText, ScrollText, Layers } from "lucide-react";
+import { Languages, FileText, ScrollText } from "lucide-react";
 import type { PanelTab } from "@/types";
 import TextTranslate from "./TextTranslate";
 import FullTranslate from "./FullTranslate";
 import Summary from "./Summary";
-import StructTranslate from "./StructTranslate";
 
 const TABS: { key: PanelTab; label: string; icon: JSX.Element }[] = [
   { key: "text", label: "划词翻译", icon: <Languages size={16} /> },
   { key: "full", label: "全文翻译", icon: <FileText size={16} /> },
   { key: "summary", label: "文献总结", icon: <ScrollText size={16} /> },
-  { key: "struct", label: "结构化翻译", icon: <Layers size={16} /> },
 ];
 
 export default function TranslationPanel() {
@@ -50,9 +48,6 @@ export default function TranslationPanel() {
         </div>
         <div className={clsx("h-full", tab !== "summary" && "hidden")}>
           <Summary />
-        </div>
-        <div className={clsx("h-full", tab !== "struct" && "hidden")}>
-          <StructTranslate />
         </div>
       </div>
     </div>

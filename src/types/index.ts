@@ -20,24 +20,7 @@ export interface PdfProgressEvent {
   error?: boolean;
 }
 
-export type PanelTab = "text" | "full" | "summary" | "struct";
-
-// ---- 结构化翻译 ----
-
-export interface StructBlock {
-  page: number; // 1-based
-  block_id: string;
-  bbox: [number, number, number, number];
-  type: string; // title/abstract/body/caption/table/references
-  source_text: string;
-  translated_text: string;
-}
-
-export interface StructResult {
-  page_count: number;
-  source_name: string;
-  blocks: StructBlock[];
-}
+export type PanelTab = "text" | "full" | "summary";
 
 // 划词事件：选中的文本 + 所在页码
 export interface SelectionInfo {
@@ -155,17 +138,9 @@ export interface PdfTab {
   translationRunning: boolean;
   translationProgress: number; // 0~1
   translationMessage: string;
-  translationMode: string; // "pdf2zh" | "fallback" | "struct" | ""
+  translationMode: string; // "pdf2zh" | "fallback" | ""
   translatedPdfUrl: string | null;
   translationError: string;
-
-  // 结构化翻译
-  structTaskId: string | null;
-  structRunning: boolean;
-  structProgress: number; // 0~1
-  structMessage: string;
-  structResult: StructResult | null;
-  structError: string;
 
   // 文献总结
   summaryContent: string;
