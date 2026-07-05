@@ -63,6 +63,12 @@ function createTab(data: Uint8Array, name: string): PdfTab {
     lastSelection: null,
     lastTranslated: "",
     lastTranslateError: "",
+    overlayTaskId: null,
+    overlayRunning: false,
+    overlayProgress: 0,
+    overlayMessage: "",
+    overlayPdfUrl: null,
+    overlayError: "",
   };
 }
 

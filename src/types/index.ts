@@ -20,7 +20,7 @@ export interface PdfProgressEvent {
   error?: boolean;
 }
 
-export type PanelTab = "text" | "full" | "summary";
+export type PanelTab = "text" | "full" | "summary" | "overlay";
 
 // 划词事件：选中的文本 + 所在页码
 export interface SelectionInfo {
@@ -141,6 +141,14 @@ export interface PdfTab {
   translationMode: string; // "pdf2zh" | "fallback" | ""
   translatedPdfUrl: string | null;
   translationError: string;
+
+  // 覆盖翻译（跳过 pdf2zh）
+  overlayTaskId: string | null;
+  overlayRunning: boolean;
+  overlayProgress: number; // 0~1
+  overlayMessage: string;
+  overlayPdfUrl: string | null;
+  overlayError: string;
 
   // 文献总结
   summaryContent: string;

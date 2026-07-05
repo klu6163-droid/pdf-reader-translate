@@ -178,6 +178,56 @@ export function pdfResultUrl(taskId: string): string {
   return `${BASE}/api/translate/pdf/result/${taskId}`;
 }
 
+// ---- 覆盖翻译（跳过 pdf2zh）----
+
+/** 启动覆盖翻译，返回 task_id */
+export async function startOverlayTrans(
+  file: File | Blob,
+  filename: string,
+  settings: LLMSettings,
+  targetLang = "zh"
+): Promise<string> {
+  const form = new FormData();
+  form.append("file", file, filename);
+  form.append("target_lang", targetLang);
+  const resp = await apiFetch(
+    "/api/overlay/pdf/start",
+    { method: "POST", body: form, headers: llmHeaders(settings) },
+    120
+  );
+  if (!resp.ok) throw new Error(await safeDetail(resp));
+  const data = await resp.json();
+  return data.task_id;
+}
+
+/** 监听覆盖翻译进度（SSE） */
+export function subscribeOverlayProgress(
+  taskId: string,
+  onEvent: (e: PdfProgressEvent) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const es = new EventSource(`${BASE}/api/overlay/pdf/progress/${taskId}`);
+  es.onmessage = (ev) => {
+    try {
+      const data = JSON.parse(ev.data) as PdfProgressEvent;
+      onEvent(data);
+      if (data.done) es.close();
+    } catch {
+      /* ignore */
+    }
+  };
+  es.onerror = () => {
+    es.close();
+    onError?.(new Error("进度连接中断"));
+  };
+  return () => es.close();
+}
+
+/** 获取覆盖翻译结果 PDF 的 URL */
+export function overlayResultUrl(taskId: string): string {
+  return `${BASE}/api/overlay/pdf/result/${taskId}`;
+}
+
 /** 文献总结（SSE 流式），通过 fetch + ReadableStream 读取 */
 export async function streamSummary(
   file: File | Blob,
