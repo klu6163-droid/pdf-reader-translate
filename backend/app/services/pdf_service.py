@@ -655,6 +655,60 @@ async def generate_text_only_translation(
 
 # ---------- 编排：带 fallback 的全文翻译 ----------
 
+async def _struct_fallback(
+    pdf_path: str,
+    out_dir: str,
+    config: LLMConfig,
+    target_lang: str,
+    reason: str,
+) -> AsyncGenerator[TranslateProgress, None]:
+    """结构化翻译兜底：PDF 字体异常/多栏时用 PyMuPDF 提取+重排，产出中文 PDF。"""
+    from app.services import structtrans_service as ss
+
+    yield TranslateProgress(
+        0.02, f"检测到{reason}，切换为结构化翻译模式...", mode="struct"
+    )
+    json_path: Optional[str] = None
+    async for prog in ss.translate_structured(pdf_path, out_dir, config, target_lang):
+        if prog.error:
+            yield TranslateProgress(
+                1.0, prog.message, done=True, error=True, mode="struct"
+            )
+            return
+        if prog.done:
+            json_path = prog.result_path
+        else:
+            yield TranslateProgress(
+                0.05 + prog.progress * 0.9, prog.message, mode="struct"
+            )
+    if not json_path or not os.path.exists(json_path):
+        yield TranslateProgress(
+            1.0, "结构化翻译失败", done=True, error=True, mode="struct"
+        )
+        return
+
+    yield TranslateProgress(0.96, "生成重排中文 PDF...", mode="struct")
+    import json as _json
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = _json.load(f)
+    blocks = [
+        ss.StructBlock(
+            b["page"], b["block_id"], tuple(b["bbox"]), b["type"],
+            b["source_text"], b.get("translated_text", ""),
+        )
+        for b in data.get("blocks", [])
+    ]
+    base = os.path.splitext(os.path.basename(pdf_path))[0]
+    result_path = os.path.join(out_dir, f"{base}-zh.pdf")
+    await asyncio.to_thread(
+        ss.to_pdf, blocks, os.path.basename(pdf_path), result_path
+    )
+    yield TranslateProgress(
+        1.0, "结构化翻译完成（重排中文 PDF）", done=True,
+        result_path=result_path, mode="struct",
+    )
+
+
 async def translate_pdf_with_fallback(
     pdf_path: str,
     out_dir: str,
@@ -662,6 +716,18 @@ async def translate_pdf_with_fallback(
     target_lang: str = "zh",
 ) -> AsyncGenerator[TranslateProgress, None]:
     """带稳定 fallback 的全文翻译编排。"""
+    # 0. 健康检查：字体异常/CID 失败/多栏乱序 → 直接走结构化翻译
+    try:
+        from app.services.structtrans_service import pdf_is_unhealthy
+        unhealthy, reason = await asyncio.to_thread(pdf_is_unhealthy, pdf_path)
+    except Exception:  # noqa: BLE001
+        unhealthy, reason = False, ""
+    if unhealthy:
+        _logger.info("PDF 健康检查不通过（%s），走结构化翻译", reason)
+        async for p in _struct_fallback(pdf_path, out_dir, config, target_lang, reason):
+            yield p
+        return
+
     # 1. 加载版面识别模型（只加载一次）
     if _doclayout_model_cached():
         yield TranslateProgress(0.03, "加载版面识别模型...", mode="pdf2zh")

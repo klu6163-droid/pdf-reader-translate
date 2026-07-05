@@ -141,7 +141,7 @@ npm run dist
 ```
 
 等价于 `npm run build:backend && npm run tauri:build`，产出安装包：
-`src-tauri/target/release/bundle/nsis/PDF Reader Translate_0.2.1_x64-setup.exe`
+`src-tauri/target/release/bundle/nsis/PDF Reader Translate_0.2.2_x64-setup.exe`
 
 ### 是否打包 pdf2zh（影响体积与全文翻译能力）
 
