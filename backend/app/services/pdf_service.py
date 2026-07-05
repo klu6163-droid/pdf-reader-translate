@@ -92,6 +92,18 @@ def _ensure_model():
     return ModelInstance.value
 
 
+def _doclayout_model_cached() -> bool:
+    """版面识别模型是否已落盘缓存（用于显示准确的进度文案，避免每次都提示「首次需联网下载」）。"""
+    try:
+        from babeldoc.const import get_cache_file_path
+
+        return get_cache_file_path(
+            "doclayout_yolo_docstructbench_imgsz1024.onnx", "models"
+        ).exists()
+    except Exception:
+        return False
+
+
 def _openai_envs(config: LLMConfig) -> dict:
     """pdf2zh OpenAI translator 的 envs 字段名（见 pdf2zh/translator.py）。"""
     return {
@@ -651,7 +663,10 @@ async def translate_pdf_with_fallback(
 ) -> AsyncGenerator[TranslateProgress, None]:
     """带稳定 fallback 的全文翻译编排。"""
     # 1. 加载版面识别模型（只加载一次）
-    yield TranslateProgress(0.03, "加载版面识别模型（首次需联网下载）...", mode="pdf2zh")
+    if _doclayout_model_cached():
+        yield TranslateProgress(0.03, "加载版面识别模型...", mode="pdf2zh")
+    else:
+        yield TranslateProgress(0.03, "下载版面识别模型（首次需联网，约 70MB）...", mode="pdf2zh")
     try:
         model = await asyncio.to_thread(_ensure_model)
     except Exception as e:  # noqa: BLE001

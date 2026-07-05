@@ -20,7 +20,7 @@ for _k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
-app = FastAPI(title="PDF 阅读翻译后端", version="0.2.0")
+app = FastAPI(title="PDF 阅读翻译后端", version="0.2.1")
 
 # 允许 Tauri / Vite 前端跨域访问
 app.add_middleware(
