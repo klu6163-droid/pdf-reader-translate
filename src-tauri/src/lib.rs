@@ -43,6 +43,27 @@ fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
 /// 保存 Python 子进程句柄，应用退出时一并关闭
 struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
+/// 杀掉启动时存入的 sidecar 子进程（取走句柄并 kill），并按映像名清掉所有 backend.exe
+/// （PyInstaller onefile 的子进程不会被 bootloader 的 kill 带走，需 taskkill 兜底）。
+fn kill_backend(window: &tauri::Window) {
+    if let Some(state) = window.try_state::<BackendProcess>() {
+        if let Ok(mut child) = state.0.lock() {
+            if let Some(proc) = child.take() {
+                let _ = proc.kill();
+            }
+        }
+    }
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/IM", "backend.exe", "/F", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -61,17 +82,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 注意：必须在 Destroyed（真正销毁）而非 CloseRequested（关闭请求）时杀后端。
-            // 前端会拦截 CloseRequested 弹「是否保留批注」，若在请求阶段就杀后端，
-            // 用户点「取消」继续用时后端已经没了。
+            // 关窗由前端 onCloseRequested 处理（弹「保留批注」对话框或直接 destroy）；
+            // 窗口真正销毁后杀后端（taskkill 杀进程树，清掉 PyInstaller onefile 子进程）。
             if let tauri::WindowEvent::Destroyed = event {
-                if let Some(state) = window.try_state::<BackendProcess>() {
-                    if let Ok(mut child) = state.0.lock() {
-                        if let Some(proc) = child.take() {
-                            let _ = proc.kill();
-                        }
-                    }
-                }
+                kill_backend(window);
             }
         })
         .run(tauri::generate_context!())

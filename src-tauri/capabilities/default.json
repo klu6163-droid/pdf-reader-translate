@@ -5,6 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-destroy",
+    "core:window:allow-close",
     "dialog:default",
     "dialog:allow-open",
     "shell:default",
