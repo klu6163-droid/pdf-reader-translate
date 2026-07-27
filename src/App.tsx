@@ -89,16 +89,25 @@ export default function App() {
     }
   }, []);
 
-  // 启动后轮询后端健康状态（后端由 Tauri 拉起，可能晚几秒才就绪）
+  // 启动后轮询后端健康状态（后端由 Tauri 拉起，PyInstaller onefile 首启需 10-20 秒解压）
   useEffect(() => {
     let stopped = false;
+    const startedAt = Date.now();
+    // 启动宽限期：25 秒内探测失败仍显示「启动中」而非「离线」
+    const GRACE_MS = 25_000;
+    setBackendStatus("starting");
     const poll = async () => {
       const ok = await checkBackend();
       if (stopped) return;
-      setBackendStatus(ok ? "online" : "offline");
+      if (ok) {
+        setBackendStatus("online");
+        return;
+      }
+      const elapsed = Date.now() - startedAt;
+      setBackendStatus(elapsed < GRACE_MS ? "starting" : "offline");
     };
     poll();
-    const timer = setInterval(poll, 5000);
+    const timer = setInterval(poll, 3000);
     return () => {
       stopped = true;
       clearInterval(timer);
@@ -107,7 +116,7 @@ export default function App() {
 
   // 「重新检测」：立即探测一次后端（用户在状态卡上点击）
   const recheckBackend = useCallback(async () => {
-    setBackendStatus("unknown");
+    setBackendStatus("starting");
     const ok = await checkBackend();
     setBackendStatus(ok ? "online" : "offline");
   }, [setBackendStatus]);

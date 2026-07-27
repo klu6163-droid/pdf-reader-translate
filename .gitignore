@@ -15,6 +15,7 @@ build/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/
+src-tauri/_internal/
 release/
 *.exe
 *.msi

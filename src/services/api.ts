@@ -15,11 +15,11 @@ import type {
 
 const BASE = "http://127.0.0.1:8765";
 
-/** 后端未连接时抛出的可识别错误，UI 可据此给出「请先启动后端」提示。 */
+/** 后端未连接时抛出的可识别错误，UI 可据此给出「后端正在启动」提示。 */
 export class BackendUnreachableError extends Error {
   constructor() {
     super(
-      "无法连接本地后端服务（127.0.0.1:8765）。请确认后端已启动：cd backend && python start.py"
+      "后端服务尚未就绪。首次启动可能需要 10-20 秒完成自解压，请稍候几秒后重试。"
     );
     this.name = "BackendUnreachableError";
   }
