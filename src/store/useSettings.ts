@@ -58,6 +58,10 @@ interface AppState {
   // 左右分栏比例（左栏占比，0.2~0.8，默认 0.5）
   splitRatio: number;
   setSplitRatio: (r: number) => void;
+
+  // 译文 PDF 是否跟随原文翻页（全文翻译 / 生成译文 PDF 共用，默认开）
+  syncTranslatedPage: boolean;
+  setSyncTranslatedPage: (v: boolean) => void;
 }
 
 const DEFAULT_SETTINGS: LLMSettings = {
@@ -192,6 +196,9 @@ export const useStore = create<AppState>()(
 
       splitRatio: 0.5,
       setSplitRatio: (r) => set({ splitRatio: r }),
+
+      syncTranslatedPage: true,
+      setSyncTranslatedPage: (v) => set({ syncTranslatedPage: v }),
     }),
     {
       name: "pdf-translate-settings",
@@ -200,6 +207,7 @@ export const useStore = create<AppState>()(
       partialize: (state) => ({
         settings: state.settings,
         splitRatio: state.splitRatio,
+        syncTranslatedPage: state.syncTranslatedPage,
         recentFiles: state.recentFiles,
         history: state.history,
         notes: state.notes,

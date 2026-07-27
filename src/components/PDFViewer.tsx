@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { savePdfFile } from "@/services/pdf";
 import { useStore } from "@/store/useSettings";
+import ToolBtn from "./shared/ToolBtn";
 import type { AnnotTool } from "@/types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -25,9 +26,12 @@ interface Props {
   suggestedName?: string;
   /** 阅读器底部「高亮/下划线/批注/笔记」按钮点击时调用，打开批注器并预选工具 */
   onOpenAnnot?: (tool: AnnotTool) => void;
+  /** 译文侧（side="right"）是否跟随原文 currentPage 翻页；默认 true。
+   *  传 false 时译文 PDF 独立滚动，不跟随原文。 */
+  syncPage?: boolean;
 }
 
-export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName, onOpenAnnot }: Props) {
+export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName, onOpenAnnot, syncPage }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
@@ -37,6 +41,8 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const renderedPagesRef = useRef<Set<number>>(new Set());
   const currentPageRef = useRef(currentPage);
+  // 译文是否跟随原文翻页（ref 形式供 buildPages 读取，避免把它加进 build 依赖触发重建）
+  const syncPageRef = useRef(syncPage !== false);
   // 搜索：缓存各页文本，避免重复抓取
   const pageTextRef = useRef<Map<number, string>>(new Map());
   // 手型工具拖拽平移
@@ -58,6 +64,10 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   useEffect(() => {
     currentPageRef.current = currentPage;
   }, [currentPage]);
+
+  useEffect(() => {
+    syncPageRef.current = syncPage !== false;
+  }, [syncPage]);
 
   // 页码输入跟随当前页（滚动改变 currentPage 时同步，但不打断输入）
   useEffect(() => {
@@ -211,7 +221,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           observer.observe(pageDiv);
         }
 
-        if (side === "right") {
+        if (side === "right" && syncPageRef.current) {
           requestAnimationFrame(() => {
             const el = pageElsRef.current.get(currentPageRef.current);
             if (el) container.scrollTo({ top: el.offsetTop - 12, behavior: "auto" });
@@ -254,12 +264,13 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
 
   useEffect(() => {
     if (side !== "right") return;
+    if (syncPage === false) return; // 关闭跟随：译文独立翻页
     const el = pageElsRef.current.get(currentPage);
     const container = containerRef.current;
     if (el && container) {
       container.scrollTo({ top: el.offsetTop - 12, behavior: "smooth" });
     }
-  }, [currentPage, side, numPages]);
+  }, [currentPage, side, numPages, syncPage]);
 
   const onMouseUp = useCallback(() => {
     if (side !== "left") return;
@@ -547,38 +558,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   );
 }
 
-// 底部工具栏按钮：图标 + 文字，支持 active / disabled
-function ToolBtn({
-  icon,
-  label,
-  onClick,
-  active,
-  disabled,
-  title,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick?: () => void;
-  active?: boolean;
-  disabled?: boolean;
-  title?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title ?? label}
-      className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
-        active
-          ? "bg-primary-50 text-primary-600"
-          : "text-slate-600 hover:bg-slate-100"
-      } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
 
 function syncPageLayerSize(
   pageDiv: HTMLDivElement,

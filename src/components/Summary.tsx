@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { Loader2, Sparkles, AlertCircle } from "lucide-react";
 import { streamSummary, bytesToPdfBlob } from "@/services/api";
 import { useStore, useActiveTab } from "@/store/useSettings";
+import MarkdownLite from "./shared/MarkdownLite";
 
 export default function Summary() {
   const tab = useActiveTab();
@@ -114,29 +115,3 @@ export default function Summary() {
   );
 }
 
-// 极简 Markdown：处理 ## 标题、- 列表、空行段落，够 MVP 用
-function MarkdownLite({ text }: { text: string }) {
-  const lines = text.split("\n");
-  return (
-    <>
-      {lines.map((line, i) => {
-        const t = line.trim();
-        if (t.startsWith("## ")) {
-          return <h2 key={i}>{t.slice(3)}</h2>;
-        }
-        if (t.startsWith("# ")) {
-          return <h2 key={i}>{t.slice(2)}</h2>;
-        }
-        if (t.startsWith("- ") || t.startsWith("* ")) {
-          return (
-            <p key={i} className="pl-4">
-              • {t.slice(2)}
-            </p>
-          );
-        }
-        if (!t) return <div key={i} className="h-2" />;
-        return <p key={i}>{line}</p>;
-      })}
-    </>
-  );
-}

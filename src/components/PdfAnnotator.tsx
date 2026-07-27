@@ -23,6 +23,7 @@ import {
 } from "@/services/api";
 import { savePdfFile } from "@/services/pdf";
 import { docKey, getStash, setStash } from "@/services/annotStash";
+import ToolBtn from "./shared/ToolBtn";
 import type { AnnotPageInfo, AnnotationType, AnnotTool, PdfAnnotation } from "@/types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -353,13 +354,13 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
 
         {/* 工具 */}
         <div className="flex items-center gap-0.5 ml-2 pl-2 border-l">
-          <ToolBtn icon={<MousePointer2 size={15} />} label="选择" active={tool === "select"} onClick={() => pickTool("select")} />
-          <ToolBtn icon={<Highlighter size={15} />} label="高亮" active={tool === "highlight"} onClick={() => pickTool("highlight")} />
-          <ToolBtn icon={<Underline size={15} />} label="下划线" active={tool === "underline"} onClick={() => pickTool("underline")} />
-          <ToolBtn icon={<Strikethrough size={15} />} label="删除线" active={tool === "strikeout"} onClick={() => pickTool("strikeout")} />
-          <ToolBtn icon={<StickyNote size={15} />} label="笔记" active={tool === "note"} onClick={() => pickTool("note")} />
-          <ToolBtn icon={<Square size={15} />} label="矩形" active={tool === "rectangle"} onClick={() => pickTool("rectangle")} />
-          <ToolBtn icon={<Pen size={15} />} label="画笔" active={tool === "ink"} onClick={() => pickTool("ink")} />
+          <ToolBtn variant="annotator" icon={<MousePointer2 size={15} />} label="选择" active={tool === "select"} onClick={() => pickTool("select")} />
+          <ToolBtn variant="annotator" icon={<Highlighter size={15} />} label="高亮" active={tool === "highlight"} onClick={() => pickTool("highlight")} />
+          <ToolBtn variant="annotator" icon={<Underline size={15} />} label="下划线" active={tool === "underline"} onClick={() => pickTool("underline")} />
+          <ToolBtn variant="annotator" icon={<Strikethrough size={15} />} label="删除线" active={tool === "strikeout"} onClick={() => pickTool("strikeout")} />
+          <ToolBtn variant="annotator" icon={<StickyNote size={15} />} label="笔记" active={tool === "note"} onClick={() => pickTool("note")} />
+          <ToolBtn variant="annotator" icon={<Square size={15} />} label="矩形" active={tool === "rectangle"} onClick={() => pickTool("rectangle")} />
+          <ToolBtn variant="annotator" icon={<Pen size={15} />} label="画笔" active={tool === "ink"} onClick={() => pickTool("ink")} />
         </div>
 
         {/* 颜色 */}
@@ -518,25 +519,6 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
         />
       )}
     </div>
-  );
-}
-
-// ================= 工具按钮 =================
-
-function ToolBtn({ icon, label, active, onClick }: {
-  icon: React.ReactNode; label: string; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      className={`flex items-center gap-1 px-1.5 py-1 rounded text-xs ${
-        active ? "bg-primary-600 text-white" : "text-slate-600 hover:bg-slate-100"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 
