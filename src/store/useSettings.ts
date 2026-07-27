@@ -188,7 +188,7 @@ export const useStore = create<AppState>()(
       settingsOpen: false,
       setSettingsOpen: (v) => set({ settingsOpen: v }),
 
-      backendStatus: 'unknown',
+      backendStatus: 'starting',
       setBackendStatus: (s) => set({ backendStatus: s }),
 
       splitRatio: 0.5,

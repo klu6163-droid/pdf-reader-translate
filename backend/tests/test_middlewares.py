@@ -62,3 +62,46 @@ async def test_heavy_task_gate_serializes():
 
     await asyncio.gather(*[worker() for _ in range(10)])
     assert peak <= 2
+    assert peak >= 2  # 10 worker + sleep(0.01) 足以达到并发上限，防止 gate 退化为串行
+
+
+@pytest.mark.asyncio
+async def test_reject_oversized_chunked():
+    """无 Content-Length（chunked）的带体请求，累计字节超限也返回 413。
+
+    直接在 ASGI 层调用中间件，绕过 httpx（httpx 总会带 Content-Length）。
+    """
+
+    async def downstream(scope, receive, send):
+        # 把 body 读完
+        while True:
+            msg = await receive()
+            if msg.get("type") == "http.request" and not msg.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    app = BodySizeLimitMiddleware(downstream, max_bytes=128)
+
+    chunks = [b"x" * 100, b"x" * 100]  # 共 200 > 128
+    idx = {"i": 0}
+
+    async def receive():
+        if idx["i"] < len(chunks):
+            msg = {"type": "http.request", "body": chunks[idx["i"]], "more_body": True}
+            idx["i"] += 1
+            return msg
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    sent: list = []
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "path": "/echo", "headers": []}
+    await app(scope, receive, send)
+
+    starts = [m for m in sent if m.get("type") == "http.response.start"]
+    assert starts and starts[0]["status"] == 413
+    # 下游的 200 响应应被吞掉，不出现两个 response.start
+    assert len(starts) == 1

@@ -91,12 +91,12 @@ export default function App() {
     }
   }, []);
 
-  // 启动后轮询后端健康状态（后端由 Tauri 拉起，PyInstaller onefile 首启需 10-20 秒解压）
+  // 启动后轮询后端健康状态（后端由 Tauri 拉起，首启需加载 PyMuPDF/pdf2zh 等重依赖）
   useEffect(() => {
     let stopped = false;
     const startedAt = Date.now();
-    // 启动宽限期：25 秒内探测失败仍显示「启动中」而非「离线」
-    const GRACE_MS = 25_000;
+    // 启动宽限期：10 秒内探测失败仍显示「启动中」而非「离线」（onedir 冷启动约 3s，留余量）
+    const GRACE_MS = 10_000;
     setBackendStatus('starting');
     const poll = async () => {
       const ok = await checkBackend();

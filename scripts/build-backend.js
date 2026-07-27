@@ -61,7 +61,7 @@ for (const tr of triples) {
 }
 
 console.log("\n=== 3. 复制 _internal/ 到资源目录 ===");
-// 通过 tauri.conf.json 的 resources map ({ "_internal/**": "_internal/" }) 打包时
+// 通过 tauri.conf.json 的 resources map ({ "_internal": "_internal" }) 打包时
 // 会被复制到安装目录下与 backend.exe 同级，backend.exe 启动时能找到依赖。
 rmSync(INTERNAL_DST, { recursive: true, force: true });
 cpSync(builtInternal, INTERNAL_DST, { recursive: true });

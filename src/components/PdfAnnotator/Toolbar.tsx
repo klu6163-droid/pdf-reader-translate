@@ -113,7 +113,7 @@ export default function AnnotToolbar({
           <button
             key={c}
             onClick={() => onColor(c)}
-            className={`w-4.5 h-4.5 w-[18px] h-[18px] rounded-full border ${
+            className={`w-[18px] h-[18px] rounded-full border ${
               color === c ? 'ring-2 ring-offset-1 ring-slate-500' : 'border-slate-300'
             }`}
             style={{ background: c }}
