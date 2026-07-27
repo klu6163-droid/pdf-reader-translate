@@ -18,6 +18,8 @@ import type { PdfProgressEvent, PdfTab } from "@/types";
 export default function OverlayTranslate() {
   const tab = useActiveTab();
   const updateTab = useStore((s) => s.updateTab);
+  const backendStatus = useStore((s) => s.backendStatus);
+  const backendOnline = backendStatus === "online";
 
   // 译文编辑/批注器：fetch 到字节后打开（null = 关闭）
   const [overlay, setOverlay] = useState<{
@@ -133,7 +135,7 @@ export default function OverlayTranslate() {
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 px-3 py-2 text-xs bg-green-50 text-green-700 border-b shrink-0">
-          覆盖翻译完成（跳过 pdf2zh，原位覆盖文本、保留 figure）
+          译文 PDF 已生成（跳过 pdf2zh，原位覆盖文本、保留 figure）
           <button
             onClick={() => openOverlayPdf(tab.overlayPdfUrl!, "edit")}
             disabled={editorLoading}
@@ -217,14 +219,14 @@ export default function OverlayTranslate() {
   return (
     <div className="flex flex-col h-full p-4 gap-4">
       <div className="text-sm text-slate-600">
-        覆盖翻译：跳过 pdf2zh，用 PyMuPDF 提取文本块 → LLM 翻译 →
+        生成译文 PDF：跳过 pdf2zh，用 PyMuPDF 提取文本块 → LLM 翻译 →
         原位覆盖（保留 figure/页面图像，只覆盖文本）。适合 pdf2zh
         效果不理想时改用。
       </div>
 
       <button
         onClick={start}
-        disabled={running || !hasPdf}
+        disabled={running || !hasPdf || !backendOnline}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
       >
         {running ? (
@@ -232,8 +234,15 @@ export default function OverlayTranslate() {
         ) : (
           <Play size={18} />
         )}
-        {running ? "翻译中..." : "开始覆盖翻译"}
+        {running ? "生成中..." : "生成译文 PDF"}
       </button>
+
+      {!backendOnline && (
+        <div className="flex items-start gap-2 p-3 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <span>后端未连接，生成译文 PDF 暂不可用。请在顶栏点「查看说明」启动后端后重试。</span>
+        </div>
+      )}
 
       {(running || progress > 0) && (
         <div className="space-y-2">

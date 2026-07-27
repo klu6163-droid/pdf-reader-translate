@@ -19,6 +19,8 @@ import type { PdfProgressEvent, PdfTab } from "@/types";
 export default function FullTranslate() {
   const tab = useActiveTab();
   const updateTab = useStore((s) => s.updateTab);
+  const backendStatus = useStore((s) => s.backendStatus);
+  const backendOnline = backendStatus === "online";
 
   // 译文编辑/批注器：fetch 到字节后打开（null = 关闭）
   const [overlay, setOverlay] = useState<{ kind: "edit" | "annot"; data: Uint8Array } | null>(null);
@@ -143,7 +145,7 @@ export default function FullTranslate() {
           翻译完成
           {tab.translationMode === "fallback" && (
             <span className="text-amber-600">
-              （降级模式：纯文本，未保留排版/公式/图表）
+              （{tab.translationMessage || "已降级为兼容翻译模式（未保留原排版）"}）
             </span>
           )}
           <button
@@ -227,12 +229,12 @@ export default function FullTranslate() {
     <div className="flex flex-col h-full p-4 gap-4">
       <div className="text-sm text-slate-600">
         将当前 PDF 全文翻译为中文，尽量保留原排版、公式、图片、表格
-        （依赖 pdf2zh；若后端未安装则自动降级为纯文本翻译）。
+        （依赖 pdf2zh；若 pdf2zh 不可用或翻译失败，自动降级为兼容翻译）。
       </div>
 
       <button
         onClick={start}
-        disabled={running || !hasPdf}
+        disabled={running || !hasPdf || !backendOnline}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
       >
         {running ? (
@@ -242,6 +244,13 @@ export default function FullTranslate() {
         )}
         {running ? "翻译中..." : "开始全文翻译"}
       </button>
+
+      {!backendOnline && (
+        <div className="flex items-start gap-2 p-3 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <span>后端未连接，全文翻译暂不可用。请在顶栏点「查看说明」启动后端后重试。</span>
+        </div>
+      )}
 
       {/* 进度 */}
       {(running || progress > 0) && (
@@ -259,7 +268,7 @@ export default function FullTranslate() {
           {mode === "fallback" && (
             <div className="flex items-center gap-1 text-xs text-amber-600">
               <AlertCircle size={14} />
-              当前为降级模式（未检测到 pdf2zh）
+              已降级为兼容翻译模式（pdf2zh 失败或不可用，具体原因见上方说明）
             </div>
           )}
         </div>

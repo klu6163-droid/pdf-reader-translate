@@ -4,26 +4,33 @@ from __future__ import annotations
 import os
 import sys
 
-# ----- 冻结模式下重定向 stdout/stderr 到日志文件 -----
-# Tauri（无控制台的窗口程序）拉起本 sidecar 时，stdout/stderr 句柄在 Windows 上
-# 可能不可写：pdf2zh / babeldoc / onnxruntime 的 tqdm 进度条与日志输出写句柄时会抛
-# [Errno 22] Invalid argument，导致全文翻译直接失败。重定向到文件既修复该问题，
-# 又提供可排查的后端日志（release 模式下原本无可见日志）。
+# ----- stdout/stderr 重定向到日志文件 -----
+# frozen（打包）模式：Tauri 无控制台，stdout/stderr 句柄在 Windows 上可能不可写，
+#   pdf2zh/babeldoc/onnxruntime 的 tqdm 与日志写句柄会抛 [Errno 22] Invalid argument
+#   导致全文翻译直接失败。把 C 层 fd 1/2 + Python sys.stdout/stderr 都指向文件。
+# dev（开发）模式：终端输出保留，同时 Tee 一份到同一 backend.log，
+#   方便排查 pdf2zh 等报错（dev 下原本只在终端可见，无法事后翻看）。
+_LOG_DIR = os.path.join(
+    os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+    "PDF Reader Translate",
+)
+_LOG_PATH = os.path.join(_LOG_DIR, "backend.log")
+
+
+def _reset_log_if_too_big(path: str) -> None:
+    """超过 5MB 则重置，避免无限增长。"""
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > 5 * 1024 * 1024:
+            os.remove(path)
+    except OSError:
+        pass
+
+
 if getattr(sys, "frozen", False):
     try:
-        _log_dir = os.path.join(
-            os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
-            "PDF Reader Translate",
-        )
-        os.makedirs(_log_dir, exist_ok=True)
-        _log_path = os.path.join(_log_dir, "backend.log")
-        # 超过 5MB 则重置，避免无限增长
-        try:
-            if os.path.getsize(_log_path) > 5 * 1024 * 1024:
-                os.remove(_log_path)
-        except OSError:
-            pass
-        _f = open(_log_path, "a", encoding="utf-8", buffering=1)
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        _reset_log_if_too_big(_LOG_PATH)
+        _f = open(_LOG_PATH, "a", encoding="utf-8", buffering=1)
         _fd = _f.fileno()
         os.dup2(_fd, 1)  # C 层 stdout（onnxruntime 等）
         os.dup2(_fd, 2)  # C 层 stderr
@@ -38,6 +45,56 @@ if getattr(sys, "frozen", False):
             os.close(_n)
         except Exception:
             pass
+else:
+    # dev：终端 + 文件双写。C 层 fd 1/2 仍指向终端（保留 onnxruntime 等直接写 fd 的输出）；
+    # Python 层 sys.stdout/stderr 替换为 Tee，print/tqdm/logging/uvicorn 都会同步落盘。
+    try:
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        _reset_log_if_too_big(_LOG_PATH)
+        _dev_f = open(_LOG_PATH, "a", encoding="utf-8", buffering=1)
+
+        class _Tee:
+            """同时写多个流的代理对象（dev 日志：终端 + 文件）。"""
+
+            def __init__(self, *streams):
+                self._streams = streams
+
+            def write(self, data):
+                if not data:
+                    return
+                for s in self._streams:
+                    try:
+                        s.write(data)
+                    except Exception:
+                        pass
+                try:
+                    _dev_f.flush()
+                except Exception:
+                    pass
+
+            def flush(self):
+                for s in self._streams:
+                    try:
+                        s.flush()
+                    except Exception:
+                        pass
+
+            def isatty(self):
+                return any(
+                    getattr(s, "isatty", lambda: False)() for s in self._streams
+                )
+
+            def fileno(self):
+                return self._streams[0].fileno()
+
+            def __getattr__(self, name):
+                return getattr(self._streams[0], name)
+
+        sys.stdout = _Tee(sys.__stdout__, _dev_f)
+        sys.stderr = _Tee(sys.__stderr__, _dev_f)
+    except Exception:
+        # 失败则保持原终端输出，不影响开发
+        pass
 
 # 非 PyInstaller 环境下，把脚本所在目录加入 path 以便 import app 包。
 # PyInstaller 冻结模式下 app 已随包内嵌，无需此 hack。

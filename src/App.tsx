@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FileText, Settings as SettingsIcon, AlertTriangle, Upload, Type, Highlighter } from "lucide-react";
+import {
+  FileText, Settings as SettingsIcon, AlertTriangle, Upload, Type, Highlighter,
+  ChevronDown, Clock,
+} from "lucide-react";
 import { useStore } from "@/store/useSettings";
 import { checkBackend } from "@/services/api";
 import { readPdfFile, basename, listenDragDrop } from "@/services/pdf";
@@ -11,6 +14,9 @@ import Settings from "@/components/Settings";
 import Splitter from "@/components/Splitter";
 import PdfEditor from "@/components/PdfEditor";
 import PdfAnnotator from "@/components/PdfAnnotator";
+import BackendStatusBanner from "@/components/BackendStatusBanner";
+import HelpModal from "@/components/HelpModal";
+import type { AnnotTool } from "@/types";
 import {
   hasDirtyStash,
   persistStash,
@@ -27,6 +33,8 @@ export default function App() {
   const backendStatus = useStore((s) => s.backendStatus);
   const setBackendStatus = useStore((s) => s.setBackendStatus);
   const splitRatio = useStore((s) => s.splitRatio);
+  const recentFiles = useStore((s) => s.recentFiles);
+  const addRecentFile = useStore((s) => s.addRecentFile);
 
   // 拖放遮罩显隐 + 拖放错误提示
   const [dragOver, setDragOver] = useState(false);
@@ -36,6 +44,11 @@ export default function App() {
   // PDF 编辑器 / 批注器浮层开关
   const [editorOpen, setEditorOpen] = useState(false);
   const [annotOpen, setAnnotOpen] = useState(false);
+  // 打开批注器时预选的工具（来自顶栏「批注」或 PDFViewer 底部工具栏）
+  const [annotInitialTool, setAnnotInitialTool] = useState<AnnotTool>("select");
+
+  // 「查看说明」弹窗
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // 退出确认：有未保留的批注改动时，关窗前询问是否保留
   const [exitAskOpen, setExitAskOpen] = useState(false);
@@ -92,6 +105,19 @@ export default function App() {
     };
   }, [setBackendStatus]);
 
+  // 「重新检测」：立即探测一次后端（用户在状态卡上点击）
+  const recheckBackend = useCallback(async () => {
+    setBackendStatus("unknown");
+    const ok = await checkBackend();
+    setBackendStatus(ok ? "online" : "offline");
+  }, [setBackendStatus]);
+
+  // 以指定工具打开批注器（顶栏「批注」传 select；阅读器底部按钮传对应工具）
+  const openAnnotWith = useCallback((tool: AnnotTool) => {
+    setAnnotInitialTool(tool);
+    setAnnotOpen(true);
+  }, []);
+
   // 从本地路径加载 PDF 为新标签（打开按钮与拖放共用）
   const loadFromPath = useCallback(
     async (path: string) => {
@@ -106,12 +132,13 @@ export default function App() {
 
         const bytes = await readPdfFile(path);
         const id = addTab(bytes, basename(path));
+        if (id) addRecentFile(path, basename(path));
         setDropError(id ? "" : "最多同时打开 8 个标签页");
       } catch (e) {
         setDropError(e instanceof Error ? e.message : "打开 PDF 失败");
       }
     },
-    [addTab]
+    [addTab, addRecentFile]
   );
 
   // 监听 Tauri 原生拖放
@@ -174,8 +201,8 @@ export default function App() {
 
       {/* 顶部工具栏 */}
       <header className="flex items-center justify-between px-4 h-12 bg-white border-b shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="font-semibold text-slate-800">PDF 阅读翻译</span>
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-slate-800 mr-1">PDF 阅读翻译</span>
           <button
             onClick={openPdf}
             className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
@@ -183,6 +210,10 @@ export default function App() {
             <FileText size={16} />
             打开 PDF
           </button>
+          <RecentFilesMenu
+            files={recentFiles}
+            onOpen={loadFromPath}
+          />
           {activeTab && (
             <button
               onClick={() => setEditorOpen(true)}
@@ -200,7 +231,7 @@ export default function App() {
           )}
           {activeTab && (
             <button
-              onClick={() => setAnnotOpen(true)}
+              onClick={() => openAnnotWith("select")}
               disabled={backendStatus !== "online"}
               title={
                 backendStatus === "online"
@@ -215,7 +246,6 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <BackendIndicator status={backendStatus} />
           <button
             onClick={() => setSettingsOpen(true)}
             className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded"
@@ -229,19 +259,12 @@ export default function App() {
       {/* 标签栏 */}
       <TabBar onOpen={openPdf} />
 
-      {/* 后端离线提示条 */}
-      {backendStatus === "offline" && (
-        <div className="flex items-center gap-2 px-4 py-2 text-sm bg-amber-50 text-amber-700 border-b border-amber-200 shrink-0">
-          <AlertTriangle size={16} className="shrink-0" />
-          <span>
-            未连接到本地后端服务。请在终端启动：
-            <code className="mx-1 px-1.5 py-0.5 bg-amber-100 rounded text-xs">
-              cd backend &amp;&amp; python start.py
-            </code>
-            翻译与总结功能暂不可用。
-          </span>
-        </div>
-      )}
+      {/* 后端状态提示（离线=友好卡片 / 在线=绿色条 / unknown=检测中） */}
+      <BackendStatusBanner
+        status={backendStatus}
+        onRecheck={recheckBackend}
+        onShowHelp={() => setHelpOpen(true)}
+      />
 
       {/* 拖放错误提示条（自动 3 秒消失） */}
       {dropError && (
@@ -263,6 +286,7 @@ export default function App() {
               currentPage={activeTab.currentPage}
               onPageChange={(p) => updateTab(activeTab.id, { currentPage: p })}
               suggestedName={activeTab.name}
+              onOpenAnnot={openAnnotWith}
             />
           ) : (
             <EmptyHint onOpen={openPdf} />
@@ -278,6 +302,7 @@ export default function App() {
       </div>
 
       <Settings />
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {/* PDF 文本块编辑器（全屏浮层）。按 activeTab.id 重建，确保切换标签后编辑正确的 PDF。 */}
       {editorOpen && activeTab && (
@@ -289,12 +314,13 @@ export default function App() {
         />
       )}
 
-      {/* PDF 批注器（全屏浮层） */}
+      {/* PDF 批注器（全屏浮层，可预选工具） */}
       {annotOpen && activeTab && (
         <PdfAnnotator
           key={activeTab.id}
           data={activeTab.pdfData}
           name={activeTab.name}
+          initialTool={annotInitialTool}
           onClose={() => setAnnotOpen(false)}
         />
       )}
@@ -338,40 +364,109 @@ export default function App() {
   );
 }
 
-function BackendIndicator({
-  status,
+function RecentFilesMenu({
+  files,
+  onOpen,
 }: {
-  status: "unknown" | "online" | "offline";
+  files: { path: string; name: string; ts: number }[];
+  onOpen: (path: string) => void;
 }) {
-  const map = {
-    unknown: { color: "bg-slate-300", label: "后端检测中" },
-    online: { color: "bg-green-500", label: "后端已连接" },
-    offline: { color: "bg-red-500", label: "后端未连接" },
-  } as const;
-  const { color, label } = map[status];
+  const [open, setOpen] = useState(false);
+  const clearRecentFiles = useStore((s) => s.clearRecentFiles);
+  const removeRecentFile = useStore((s) => s.removeRecentFile);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement)?.closest("[data-recent-menu]");
+      if (!el) setOpen(false);
+    };
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [open]);
+
   return (
-    <div
-      className="flex items-center gap-1.5 text-xs text-slate-500"
-      title={label}
-    >
-      <span className={`w-2 h-2 rounded-full ${color}`} />
-      {label}
+    <div className="relative" data-recent-menu>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={files.length === 0}
+        title={files.length === 0 ? "暂无最近文件" : "最近打开的文件"}
+        className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Clock size={16} />
+        最近文件
+        <ChevronDown size={14} className="text-slate-400" />
+      </button>
+      {open && files.length > 0 && (
+        <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 max-h-80 overflow-auto">
+          {files.map((f) => (
+            <div
+              key={f.path}
+              className="group flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer"
+              onClick={() => {
+                setOpen(false);
+                onOpen(f.path);
+              }}
+              title={f.path}
+            >
+              <FileText size={14} className="shrink-0 text-slate-400" />
+              <span className="flex-1 truncate text-sm text-slate-700">
+                {f.name}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeRecentFile(f.path);
+                }}
+                className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 px-1"
+                title="从列表移除"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <div className="border-t mt-1 pt-1">
+            <button
+              onClick={() => {
+                clearRecentFiles();
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-red-500 hover:bg-slate-50"
+            >
+              清空最近文件
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function EmptyHint({ onOpen }: { onOpen: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
-      <FileText size={48} strokeWidth={1} />
-      <p>尚未打开 PDF</p>
-      <button
-        onClick={onOpen}
-        className="px-4 py-2 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
-      >
-        选择本地 PDF 文件
-      </button>
-      <p className="text-xs text-slate-400 mt-1">或将 PDF 文件拖入窗口</p>
+    <div className="flex flex-col items-center justify-center h-full p-6">
+      <div className="w-full max-w-sm flex flex-col items-center text-center gap-4 p-8 bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center">
+          <FileText size={32} className="text-primary-500" strokeWidth={1.5} />
+        </div>
+        <div>
+          <p className="text-base font-medium text-slate-800">
+            打开一篇 PDF 开始阅读
+          </p>
+          <p className="text-sm text-slate-500 mt-1">
+            支持拖拽 PDF 到这里，或选择本地 PDF 文件。
+          </p>
+        </div>
+        <button
+          onClick={onOpen}
+          className="flex items-center gap-2 px-5 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+        >
+          <FileText size={16} />
+          选择 PDF 文件
+        </button>
+        <p className="text-xs text-slate-400">也可点击顶部「最近文件」重新打开</p>
+      </div>
     </div>
   );
 }

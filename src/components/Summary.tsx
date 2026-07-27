@@ -9,6 +9,8 @@ import { useStore, useActiveTab } from "@/store/useSettings";
 
 export default function Summary() {
   const tab = useActiveTab();
+  const backendStatus = useStore((s) => s.backendStatus);
+  const backendOnline = backendStatus === "online";
 
   const start = useCallback(async () => {
     const s = useStore.getState();
@@ -58,7 +60,7 @@ export default function Summary() {
     <div className="flex flex-col h-full p-4 gap-3">
       <button
         onClick={start}
-        disabled={running || !hasPdf}
+        disabled={running || !hasPdf || !backendOnline}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 shrink-0"
       >
         {running ? (
@@ -68,6 +70,13 @@ export default function Summary() {
         )}
         {running ? "生成中..." : "生成结构化总结"}
       </button>
+
+      {!backendOnline && (
+        <div className="flex items-start gap-2 p-3 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded shrink-0">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <span>后端未连接，文献总结暂不可用。请在顶栏点「查看说明」启动后端后重试。</span>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 p-3 text-sm bg-red-50 text-red-600 rounded shrink-0">

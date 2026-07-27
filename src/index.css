@@ -72,6 +72,15 @@ body,
   top: 0;
 }
 
+/* 手型工具：禁用文字层选中与指针事件，便于点击拖动平移 */
+.mode-hand .textLayer {
+  pointer-events: none;
+  user-select: none;
+}
+.mode-hand .textLayer :is(span, br) {
+  cursor: inherit;
+}
+
 /* 滚动条美化 */
 ::-webkit-scrollbar {
   width: 8px;

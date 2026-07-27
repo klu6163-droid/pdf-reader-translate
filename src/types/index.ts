@@ -28,6 +28,35 @@ export interface SelectionInfo {
   page: number;
 }
 
+// 最近打开的文件（仅记路径/名字/时间，PDF 字节不落盘）
+export interface RecentFile {
+  path: string;
+  name: string;
+  ts: number;
+}
+
+// 一条划词翻译历史（含可选术语解释）
+export interface HistoryItem {
+  id: string;
+  original: string;
+  translated: string;
+  terms?: string;
+  page: number;
+  tabName: string;
+  ts: number;
+}
+
+// 一条收藏笔记（由划词翻译收藏而来，可补注释）
+export interface NoteItem {
+  id: string;
+  original: string;
+  translated: string;
+  note?: string;
+  page: number;
+  tabName: string;
+  ts: number;
+}
+
 // ---- PDF 文本块编辑 ----
 
 // 单个可编辑文本块（后端 PyMuPDF span 解析结果）
@@ -67,6 +96,9 @@ export type AnnotationType =
   | "note"
   | "rectangle"
   | "ink";
+
+// 批注工具：选择 + 各类批注。PDFViewer 底部工具栏与 PdfAnnotator 共用。
+export type AnnotTool = "select" | AnnotationType;
 
 // 单条批注（前后端一致；坐标为 PDF 点，左上原点）
 export interface PdfAnnotation {
@@ -159,4 +191,7 @@ export interface PdfTab {
   lastSelection: SelectionInfo | null;
   lastTranslated: string;
   lastTranslateError: string;
+  // 术语解释（前端直连 LLM 生成，与最近一次翻译对应）
+  lastTerms: string;
+  lastTermsError: string;
 }

@@ -23,7 +23,7 @@ import {
 } from "@/services/api";
 import { savePdfFile } from "@/services/pdf";
 import { docKey, getStash, setStash } from "@/services/annotStash";
-import type { AnnotPageInfo, AnnotationType, PdfAnnotation } from "@/types";
+import type { AnnotPageInfo, AnnotationType, AnnotTool, PdfAnnotation } from "@/types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -44,14 +44,16 @@ const newId = () => crypto.randomUUID().replace(/-/g, "");
 interface Props {
   data: Uint8Array;
   name: string;
+  /** 打开时预选的工具（来自阅读器底部工具栏：高亮/下划线/批注/笔记） */
+  initialTool?: AnnotTool;
   onClose: () => void;
 }
 
-export default function PdfAnnotator({ data, name, onClose }: Props) {
+export default function PdfAnnotator({ data, name, initialTool, onClose }: Props) {
   const [annotId, setAnnotId] = useState<string | null>(null);
   const [pages, setPages] = useState<AnnotPageInfo[]>([]);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
-  const [tool, setTool] = useState<Tool>("select");
+  const [tool, setTool] = useState<Tool>(initialTool ?? "select");
   const [color, setColor] = useState(PALETTE[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [noteEditId, setNoteEditId] = useState<string | null>(null); // 就地编辑中的笔记

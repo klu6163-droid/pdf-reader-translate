@@ -3,8 +3,14 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import { ZoomIn, ZoomOut, AlertCircle, Loader2, Download } from "lucide-react";
+import {
+  ZoomIn, ZoomOut, AlertCircle, Loader2, Download,
+  Search, Maximize2, MousePointer2, Hand, Highlighter, Underline,
+  PenLine, StickyNote, Undo2, Redo2,
+} from "lucide-react";
 import { savePdfFile } from "@/services/pdf";
+import { useStore } from "@/store/useSettings";
+import type { AnnotTool } from "@/types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -17,9 +23,11 @@ interface Props {
   currentPage: number;
   onPageChange?: (p: number) => void;
   suggestedName?: string;
+  /** 阅读器底部「高亮/下划线/批注/笔记」按钮点击时调用，打开批注器并预选工具 */
+  onOpenAnnot?: (tool: AnnotTool) => void;
 }
 
-export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName }: Props) {
+export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName, onOpenAnnot }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
@@ -29,11 +37,31 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const renderedPagesRef = useRef<Set<number>>(new Set());
   const currentPageRef = useRef(currentPage);
+  // 搜索：缓存各页文本，避免重复抓取
+  const pageTextRef = useRef<Map<number, string>>(new Map());
+  // 手型工具拖拽平移
+  const panRef = useRef<{ x: number; y: number } | null>(null);
+
+  // 阅读器视图模式：select=可选文字（划词）/ hand=手型平移
+  const [viewMode, setViewMode] = useState<"select" | "hand">("select");
+  // 搜索
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResult, setSearchResult] = useState<{ count: number; firstPage: number } | null>(null);
+  const [searching, setSearching] = useState(false);
+  // 页码跳转输入
+  const [pageInput, setPageInput] = useState(String(currentPage));
+
+  const backendOnline = useStore((s) => s.backendStatus) === "online";
 
   const setSelection = useSelectionReporter(side);
 
   useEffect(() => {
     currentPageRef.current = currentPage;
+  }, [currentPage]);
+
+  // 页码输入跟随当前页（滚动改变 currentPage 时同步，但不打断输入）
+  useEffect(() => {
+    setPageInput(String(currentPage));
   }, [currentPage]);
 
   useEffect(() => {
@@ -235,11 +263,106 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
 
   const onMouseUp = useCallback(() => {
     if (side !== "left") return;
+    if (viewMode !== "select") return; // 手型模式不上报选中
     const sel = window.getSelection();
     const text = sel?.toString().trim();
     if (!text || !sel) return;
     setSelection(text, pageFromSelection(sel) ?? currentPage);
-  }, [side, currentPage, setSelection]);
+  }, [side, currentPage, setSelection, viewMode]);
+
+  // 跳转到指定页（页码输入 / 搜索结果）
+  const jumpToPage = useCallback((p: number) => {
+    const n = Math.max(1, Math.min(numPages || 1, p));
+    const el = pageElsRef.current.get(n);
+    const container = containerRef.current;
+    if (el && container) {
+      container.scrollTo({ top: el.offsetTop - 12, behavior: "smooth" });
+    }
+    onPageChange?.(n);
+  }, [numPages, onPageChange]);
+
+  // 适合宽度：按容器宽与第 1 页原始宽计算缩放
+  const fitWidth = useCallback(async () => {
+    const doc = pdfRef.current;
+    const container = containerRef.current;
+    if (!doc || !container) return;
+    try {
+      const page = await doc.getPage(1);
+      const vp1 = page.getViewport({ scale: 1 });
+      const avail = container.clientWidth - 16; // 留出 padding
+      if (vp1.width > 0) {
+        setScale(Math.max(0.5, Math.min(3, avail / vp1.width)));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // 搜索：遍历各页文本（缓存），统计匹配数并跳到首个匹配页
+  const runSearch = useCallback(async () => {
+    const q = searchQ.trim();
+    if (!q) {
+      setSearchResult(null);
+      return;
+    }
+    const doc = pdfRef.current;
+    if (!doc) return;
+    setSearching(true);
+    const ql = q.toLowerCase();
+    let count = 0;
+    let firstPage = 0;
+    try {
+      for (let i = 1; i <= doc.numPages; i++) {
+        let text = pageTextRef.current.get(i);
+        if (text === undefined) {
+          try {
+            const page = await doc.getPage(i);
+            const tc = await page.getTextContent();
+            text = (tc.items as any[])
+              .map((it) => (typeof it.str === "string" ? it.str : ""))
+              .join(" ");
+          } catch {
+            text = "";
+          }
+          pageTextRef.current.set(i, text);
+        }
+        const lower = text.toLowerCase();
+        let idx = 0;
+        while ((idx = lower.indexOf(ql, idx)) !== -1) {
+          count++;
+          if (!firstPage) firstPage = i;
+          idx += ql.length;
+        }
+      }
+      setSearchResult({ count, firstPage });
+      if (firstPage) jumpToPage(firstPage);
+    } finally {
+      setSearching(false);
+    }
+  }, [searchQ, jumpToPage]);
+
+  // 手型工具：按下拖动平移
+  const onPanDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (viewMode !== "hand") return;
+      panRef.current = { x: e.clientX, y: e.clientY };
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    },
+    [viewMode]
+  );
+  const onPanMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!panRef.current) return;
+      const dx = e.clientX - panRef.current.x;
+      const dy = e.clientY - panRef.current.y;
+      panRef.current = { x: e.clientX, y: e.clientY };
+      containerRef.current?.scrollBy(-dx, -dy);
+    },
+    []
+  );
+  const onPanUp = useCallback(() => {
+    panRef.current = null;
+  }, []);
 
   // 导出当前 PDF：源 PDF（Uint8Array）直接存；译文 PDF（URL）先 fetch 再存
   const handleExport = useCallback(async () => {
@@ -261,7 +384,21 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 h-9 bg-white border-b text-sm shrink-0">
+      {/* 顶部工具栏：页码 / 缩放 / 适合宽度 / 搜索 / 导出 */}
+      <div className="flex items-center gap-1.5 px-3 h-10 bg-white border-b text-sm shrink-0 overflow-x-auto whitespace-nowrap">
+        <input
+          value={pageInput}
+          onChange={(e) => setPageInput(e.target.value.replace(/[^\d]/g, ""))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") jumpToPage(Number(pageInput) || 1);
+          }}
+          onBlur={() => jumpToPage(Number(pageInput) || 1)}
+          className="w-10 px-1 py-0.5 text-center border border-slate-200 rounded text-xs"
+          title="跳转到页码（回车）"
+        />
+        <span className="text-slate-400 text-xs">/ {numPages || "-"}</span>
+
+        <span className="w-px h-5 bg-slate-200 mx-1" />
         <button
           onClick={() => setScale((s) => Math.max(0.5, s - 0.15))}
           className="p-1 hover:bg-slate-100 rounded"
@@ -269,7 +406,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         >
           <ZoomOut size={16} />
         </button>
-        <span className="w-12 text-center">{Math.round(scale * 100)}%</span>
+        <span className="w-12 text-center text-xs">{Math.round(scale * 100)}%</span>
         <button
           onClick={() => setScale((s) => Math.min(3, s + 0.15))}
           className="p-1 hover:bg-slate-100 rounded"
@@ -278,6 +415,44 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           <ZoomIn size={16} />
         </button>
         <button
+          onClick={fitWidth}
+          className="p-1 hover:bg-slate-100 rounded"
+          title="适合宽度"
+        >
+          <Maximize2 size={15} />
+        </button>
+
+        <span className="w-px h-5 bg-slate-200 mx-1" />
+        <input
+          value={searchQ}
+          onChange={(e) => setSearchQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") runSearch();
+          }}
+          placeholder="搜索"
+          className="w-24 px-2 py-0.5 border border-slate-200 rounded text-xs"
+        />
+        <button
+          onClick={runSearch}
+          disabled={searching}
+          className="p-1 hover:bg-slate-100 rounded disabled:opacity-50"
+          title="搜索"
+        >
+          {searching ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Search size={14} />
+          )}
+        </button>
+        {searchResult && (
+          <span className="text-xs text-slate-400 whitespace-nowrap">
+            {searchResult.count > 0
+              ? `${searchResult.count} 处`
+              : "无结果"}
+          </span>
+        )}
+
+        <button
           onClick={handleExport}
           className="ml-auto flex items-center gap-1 px-2 py-1 text-slate-600 hover:bg-slate-100 rounded"
           title="导出 PDF"
@@ -285,9 +460,6 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           <Download size={15} />
           导出
         </button>
-        <span className="text-slate-500">
-          {numPages > 0 && `第 ${currentPage} / ${numPages} 页`}
-        </span>
       </div>
 
       <div className="flex-1 relative overflow-hidden">
@@ -307,10 +479,104 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           ref={containerRef}
           onScroll={onScroll}
           onMouseUp={onMouseUp}
-          className="h-full overflow-auto bg-slate-200 px-2"
+          onPointerDown={onPanDown}
+          onPointerMove={onPanMove}
+          onPointerUp={onPanUp}
+          className={`h-full overflow-auto bg-slate-200 px-2 ${
+            viewMode === "hand" ? "cursor-grab mode-hand active:cursor-grabbing" : ""
+          }`}
         />
       </div>
+
+      {/* 底部工具栏：选择 / 手型 / 高亮 / 下划线 / 批注 / 笔记 / 撤销 / 重做（仅阅读侧） */}
+      {side === "left" && onOpenAnnot && (
+        <div className="flex items-center gap-0.5 px-2 h-9 bg-white border-t text-slate-600 shrink-0 overflow-x-auto whitespace-nowrap">
+          <ToolBtn
+            active={viewMode === "select"}
+            onClick={() => setViewMode("select")}
+            icon={<MousePointer2 size={16} />}
+            label="选择"
+          />
+          <ToolBtn
+            active={viewMode === "hand"}
+            onClick={() => setViewMode("hand")}
+            icon={<Hand size={16} />}
+            label="手型"
+          />
+          <span className="w-px h-5 bg-slate-200 mx-1" />
+          <ToolBtn
+            onClick={() => onOpenAnnot("highlight")}
+            icon={<Highlighter size={16} />}
+            label="高亮"
+            disabled={!backendOnline}
+          />
+          <ToolBtn
+            onClick={() => onOpenAnnot("underline")}
+            icon={<Underline size={16} />}
+            label="下划线"
+            disabled={!backendOnline}
+          />
+          <ToolBtn
+            onClick={() => onOpenAnnot("select")}
+            icon={<PenLine size={16} />}
+            label="批注"
+            disabled={!backendOnline}
+          />
+          <ToolBtn
+            onClick={() => onOpenAnnot("note")}
+            icon={<StickyNote size={16} />}
+            label="笔记"
+            disabled={!backendOnline}
+          />
+          <span className="w-px h-5 bg-slate-200 mx-1" />
+          <ToolBtn
+            icon={<Undo2 size={16} />}
+            label="撤销"
+            disabled
+            title="在批注模式中可用"
+          />
+          <ToolBtn
+            icon={<Redo2 size={16} />}
+            label="重做"
+            disabled
+            title="在批注模式中可用"
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+// 底部工具栏按钮：图标 + 文字，支持 active / disabled
+function ToolBtn({
+  icon,
+  label,
+  onClick,
+  active,
+  disabled,
+  title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
+        active
+          ? "bg-primary-50 text-primary-600"
+          : "text-slate-600 hover:bg-slate-100"
+      } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

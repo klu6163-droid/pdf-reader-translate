@@ -4,9 +4,11 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { LLMSettings, PdfTab } from "@/types";
+import type { LLMSettings, PdfTab, RecentFile, HistoryItem, NoteItem } from "@/types";
 
 const MAX_TABS = 8;
+const MAX_RECENT = 12;
+const MAX_HISTORY = 50;
 
 interface AppState {
   settings: LLMSettings;
@@ -25,6 +27,26 @@ interface AppState {
   updateTab: (id: string, patch: Partial<PdfTab>) => void;
   /** 追加总结内容（流式增量）。 */
   appendSummary: (id: string, delta: string) => void;
+
+  // 最近文件（仅路径，点击用 readPdfFile 重新读盘）
+  recentFiles: RecentFile[];
+  addRecentFile: (path: string, name: string) => void;
+  removeRecentFile: (path: string) => void;
+  clearRecentFiles: () => void;
+
+  // 划词翻译历史 & 收藏笔记（持久化，纯文本，体积小）
+  history: HistoryItem[];
+  addHistory: (item: Omit<HistoryItem, "id" | "ts">) => void;
+  clearHistory: () => void;
+
+  notes: NoteItem[];
+  addNote: (item: Omit<NoteItem, "id" | "ts">) => void;
+  removeNote: (id: string) => void;
+  clearNotes: () => void;
+
+  // 跨组件信号：划词翻译「添加到笔记」时自增，HistoryNotes 监听后展开并切到笔记栏
+  notesFlash: number;
+  bumpNotesFlash: () => void;
 
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
@@ -63,6 +85,8 @@ function createTab(data: Uint8Array, name: string): PdfTab {
     lastSelection: null,
     lastTranslated: "",
     lastTranslateError: "",
+    lastTerms: "",
+    lastTermsError: "",
     overlayTaskId: null,
     overlayRunning: false,
     overlayProgress: 0,
@@ -115,6 +139,51 @@ export const useStore = create<AppState>()(
           ),
         })),
 
+      recentFiles: [],
+      addRecentFile: (path, name) =>
+        set((state) => {
+          // 去重并置顶，超过上限截断
+          const filtered = state.recentFiles.filter((f) => f.path !== path);
+          const next = [{ path, name, ts: Date.now() }, ...filtered];
+          return { recentFiles: next.slice(0, MAX_RECENT) };
+        }),
+      removeRecentFile: (path) =>
+        set((state) => ({
+          recentFiles: state.recentFiles.filter((f) => f.path !== path),
+        })),
+      clearRecentFiles: () => set({ recentFiles: [] }),
+
+      history: [],
+      addHistory: (item) =>
+        set((state) => {
+          const full: HistoryItem = {
+            ...item,
+            id: crypto.randomUUID(),
+            ts: Date.now(),
+          };
+          return { history: [full, ...state.history].slice(0, MAX_HISTORY) };
+        }),
+      clearHistory: () => set({ history: [] }),
+
+      notes: [],
+      addNote: (item) =>
+        set((state) => {
+          const full: NoteItem = {
+            ...item,
+            id: crypto.randomUUID(),
+            ts: Date.now(),
+          };
+          return { notes: [full, ...state.notes] };
+        }),
+      removeNote: (id) =>
+        set((state) => ({
+          notes: state.notes.filter((n) => n.id !== id),
+        })),
+      clearNotes: () => set({ notes: [] }),
+
+      notesFlash: 0,
+      bumpNotesFlash: () => set((state) => ({ notesFlash: state.notesFlash + 1 })),
+
       settingsOpen: false,
       setSettingsOpen: (v) => set({ settingsOpen: v }),
 
@@ -126,10 +195,14 @@ export const useStore = create<AppState>()(
     }),
     {
       name: "pdf-translate-settings",
-      // 持久化 settings + 分栏比例；PDF 数据不落盘
+      // 持久化 settings + 分栏比例 + 最近文件/历史/笔记（均纯文本，体积小）；
+      // PDF 字节不落盘
       partialize: (state) => ({
         settings: state.settings,
         splitRatio: state.splitRatio,
+        recentFiles: state.recentFiles,
+        history: state.history,
+        notes: state.notes,
       }),
     }
   )
