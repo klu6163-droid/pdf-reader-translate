@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import translate, pdf_trans, summary, pdf_edit, pdf_annot, overlay_trans
+from app.config import allowed_origins
+from app.middlewares import BodySizeLimitMiddleware
 
 # 后端不走系统代理，直连用户配置的 base_url。
 # 避免 httpx 自动套用系统代理（Clash/V2Ray 等）导致 TLS 握手失败；
@@ -22,14 +24,18 @@ logger = logging.getLogger("app")
 
 app = FastAPI(title="PDF 阅读翻译后端", version="0.2.2")
 
-# 允许 Tauri / Vite 前端跨域访问
+# 允许 Tauri / Vite 前端跨域访问（默认白名单在 app.config.allowed_origins）。
+# 生产上如需临时放宽，可通过环境变量 ALLOWED_ORIGINS="a,b,c" 覆盖。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept", "Authorization", "x-llm-api-key"],
 )
+
+# 请求大小限制（默认 200MB，可通过 MAX_UPLOAD_BYTES 调整）。
+app.add_middleware(BodySizeLimitMiddleware)
 
 
 @app.exception_handler(Exception)

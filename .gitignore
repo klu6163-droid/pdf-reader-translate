@@ -52,6 +52,18 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ===== 与本项目无关的历史遗留脚本/图片（若不想物理删除，先屏蔽入库）=====
+XRD_*.png
+make_xrd_origin_plots.py
+.claude/
+
+# ===== 测试与覆盖率 =====
+coverage/
+.coverage
+.pytest_cache/
+htmlcov/
+.vitest-cache/
+
 # ===== 注意：以下锁文件【必须】提交，保证他人复现相同依赖版本，不要忽略 =====
 # package-lock.json
 # src-tauri/Cargo.lock

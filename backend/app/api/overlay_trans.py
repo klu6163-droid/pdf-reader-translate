@@ -23,6 +23,7 @@ from app.services.file_utils import (
     scoped_path,
 )
 from app.services.task_manager import task_manager
+from app.middlewares import heavy_task_gate
 
 router = APIRouter(prefix="/api/overlay/pdf", tags=["overlay-translate"])
 
@@ -55,23 +56,25 @@ async def start_overlay_translate(
 
     async def _run() -> None:
         try:
-            async for prog in pdf_service.generate_overlay_translation(
-                upload_path, out_dir, config
-            ):
-                event = {
-                    "progress": round(prog.progress, 4),
-                    "message": prog.message,
-                    "mode": prog.mode,
-                    "done": prog.done,
-                    "error": prog.error,
-                }
-                await task_manager.push(task.id, event)
-                if prog.done:
-                    task_manager.finish(
-                        task.id,
-                        result=prog.result_path,
-                        error=prog.message if prog.error else None,
-                    )
+            # 与全文翻译共用重任务闸门。
+            async with heavy_task_gate:
+                async for prog in pdf_service.generate_overlay_translation(
+                    upload_path, out_dir, config
+                ):
+                    event = {
+                        "progress": round(prog.progress, 4),
+                        "message": prog.message,
+                        "mode": prog.mode,
+                        "done": prog.done,
+                        "error": prog.error,
+                    }
+                    await task_manager.push(task.id, event)
+                    if prog.done:
+                        task_manager.finish(
+                            task.id,
+                            result=prog.result_path,
+                            error=prog.message if prog.error else None,
+                        )
         except Exception as e:  # noqa: BLE001
             msg = f"覆盖翻译失败: {e}"
             await task_manager.push(

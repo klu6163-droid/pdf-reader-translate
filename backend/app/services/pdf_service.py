@@ -396,18 +396,8 @@ def _which_first(names: list) -> Optional[str]:
 
 def _overlay_font_path() -> Optional[str]:
     """返回可嵌入 PDF 的中文字体路径。"""
-    candidates = (
-        r"C:\Windows\Fonts\msyh.ttc",      # Microsoft YaHei
-        r"C:\Windows\Fonts\simsun.ttc",    # SimSun
-        r"C:\Windows\Fonts\simhei.ttf",    # SimHei
-        r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
-        r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf",
-        r"C:\Windows\Fonts\STSONG.TTF",
-    )
-    for font_path in candidates:
-        if os.path.exists(font_path):
-            return font_path
-    return None
+    from app.services.fonts import resolve_cjk_font_path
+    return resolve_cjk_font_path()
 
 
 def _page_text_blocks(page) -> list[tuple[object, str]]:
@@ -756,25 +746,20 @@ def _register_text_pdf_font() -> str:
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.pdfbase.ttfonts import TTFont
 
+    from app.services.fonts import iter_cjk_font_candidates
+
     font_name = "AppFallbackCJK"
-    candidates = (
-        (r"C:\Windows\Fonts\msyh.ttc", 0),      # Microsoft YaHei
-        (r"C:\Windows\Fonts\simsun.ttc", 0),    # SimSun
-        (r"C:\Windows\Fonts\simhei.ttf", 0),    # SimHei
-        (r"C:\Windows\Fonts\NotoSansSC-VF.ttf", 0),
-        (r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf", 0),
-        (r"C:\Windows\Fonts\STSONG.TTF", 0),
-    )
-    for font_path, subfont_index in candidates:
+    # 集合字体路径来自 fonts 模块（跨平台）；ttc 一律取 subfontIndex=0。
+    for font_path in iter_cjk_font_candidates():
         if not os.path.exists(font_path):
             continue
         try:
             pdfmetrics.registerFont(
-                TTFont(font_name, font_path, subfontIndex=subfont_index)
+                TTFont(font_name, font_path, subfontIndex=0)
             )
             return font_name
         except Exception as e:  # noqa: BLE001
-            _logger.info("注册降级 PDF 字体失败 %s: %s", font_path, e)
+            _logger.warning("注册降级 PDF 字体失败 %s: %s", font_path, e)
 
     # 最后兜底：可提取文字，但部分 pdf.js 环境可能需要 CMap 才能显示。
     pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))

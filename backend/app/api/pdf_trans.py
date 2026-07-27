@@ -18,6 +18,7 @@ from app.services.file_utils import (
     scoped_path,
 )
 from app.services.task_manager import task_manager
+from app.middlewares import heavy_task_gate
 
 router = APIRouter(prefix="/api/translate/pdf", tags=["pdf-translate"])
 
@@ -50,23 +51,25 @@ async def start_pdf_translate(
 
     async def _run() -> None:
         try:
-            async for prog in pdf_service.translate_pdf(
-                upload_path, out_dir, config, target_lang
-            ):
-                event = {
-                    "progress": round(prog.progress, 4),
-                    "message": prog.message,
-                    "mode": prog.mode,
-                    "done": prog.done,
-                    "error": prog.error,
-                }
-                await task_manager.push(task.id, event)
-                if prog.done:
-                    task_manager.finish(
-                        task.id,
-                        result=prog.result_path,
-                        error=prog.message if prog.error else None,
-                    )
+            # 重任务闸门：限制同时进行的翻译任务数，避免 CPU/内存打爆。
+            async with heavy_task_gate:
+                async for prog in pdf_service.translate_pdf(
+                    upload_path, out_dir, config, target_lang
+                ):
+                    event = {
+                        "progress": round(prog.progress, 4),
+                        "message": prog.message,
+                        "mode": prog.mode,
+                        "done": prog.done,
+                        "error": prog.error,
+                    }
+                    await task_manager.push(task.id, event)
+                    if prog.done:
+                        task_manager.finish(
+                            task.id,
+                            result=prog.result_path,
+                            error=prog.message if prog.error else None,
+                        )
         except Exception as e:  # noqa: BLE001
             msg = f"翻译失败: {e}"
             await task_manager.push(
