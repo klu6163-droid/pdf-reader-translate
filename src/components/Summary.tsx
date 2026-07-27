@@ -2,16 +2,16 @@
 // 状态存于当前标签页；切换标签时流不会中断（onDelta 写入所属标签）。
 // 用轻量的 Markdown 渲染（仅处理 ## 标题与段落），避免额外依赖。
 
-import { useCallback } from "react";
-import { Loader2, Sparkles, AlertCircle } from "lucide-react";
-import { streamSummary, bytesToPdfBlob } from "@/services/api";
-import { useStore, useActiveTab } from "@/store/useSettings";
-import MarkdownLite from "./shared/MarkdownLite";
+import { useCallback } from 'react';
+import { Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { streamSummary, bytesToPdfBlob } from '@/services/api';
+import { useStore, useActiveTab } from '@/store/useSettings';
+import MarkdownLite from './shared/MarkdownLite';
 
 export default function Summary() {
   const tab = useActiveTab();
   const backendStatus = useStore((s) => s.backendStatus);
-  const backendOnline = backendStatus === "online";
+  const backendOnline = backendStatus === 'online';
 
   const start = useCallback(async () => {
     const s = useStore.getState();
@@ -20,19 +20,19 @@ export default function Summary() {
     const targetId = current.id; // 捕获，避免异步期间切换标签写错对象
 
     if (!current.pdfData) {
-      s.updateTab(targetId, { summaryError: "请先打开一个 PDF" });
+      s.updateTab(targetId, { summaryError: '请先打开一个 PDF' });
       return;
     }
     if (!s.hasSettings()) {
-      s.updateTab(targetId, { summaryError: "请先在「设置」中配置 API Key" });
+      s.updateTab(targetId, { summaryError: '请先在「设置」中配置 API Key' });
       s.setSettingsOpen(true);
       return;
     }
 
     s.updateTab(targetId, {
       summaryRunning: true,
-      summaryError: "",
-      summaryContent: "",
+      summaryError: '',
+      summaryContent: '',
     });
 
     const blob = bytesToPdfBlob(current.pdfData);
@@ -48,13 +48,13 @@ export default function Summary() {
         useStore.getState().updateTab(targetId, {
           summaryRunning: false,
           summaryError: err,
-        })
+        }),
     );
   }, []);
 
   const running = tab?.summaryRunning ?? false;
-  const content = tab?.summaryContent ?? "";
-  const error = tab?.summaryError ?? "";
+  const content = tab?.summaryContent ?? '';
+  const error = tab?.summaryError ?? '';
   const hasPdf = !!tab?.pdfData;
 
   return (
@@ -64,12 +64,8 @@ export default function Summary() {
         disabled={running || !hasPdf || !backendOnline}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 shrink-0"
       >
-        {running ? (
-          <Loader2 className="animate-spin" size={18} />
-        ) : (
-          <Sparkles size={18} />
-        )}
-        {running ? "生成中..." : "生成结构化总结"}
+        {running ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
+        {running ? '生成中...' : '生成结构化总结'}
       </button>
 
       {!backendOnline && (
@@ -107,11 +103,8 @@ export default function Summary() {
       )}
 
       {!hasPdf && !running && (
-        <div className="text-sm text-slate-400 text-center mt-4">
-          请先在左侧打开一个 PDF
-        </div>
+        <div className="text-sm text-slate-400 text-center mt-4">请先在左侧打开一个 PDF</div>
       )}
     </div>
   );
 }
-

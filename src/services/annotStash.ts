@@ -7,9 +7,9 @@
 // 退出时若 dirty，App 弹「是否保留」——保留=写入 localStorage，
 // 不保留=不写盘（localStorage 维持启动时的内容）。
 
-import type { PdfAnnotation } from "@/types";
+import type { PdfAnnotation } from '@/types';
 
-const STORAGE_KEY = "pdf-annot-stash-v1";
+const STORAGE_KEY = 'pdf-annot-stash-v1';
 const MAX_DOCS = 20; // 持久化时只保留最近 N 个文档的批注，防止无限增长
 
 interface StashEntry {
@@ -70,10 +70,10 @@ export function discardDirtyStash(): void {
 /** 计算 PDF 内容指纹。优先 SHA-256；环境不支持时退化为采样 FNV-1a。 */
 export async function docKey(bytes: Uint8Array): Promise<string> {
   try {
-    const digest = await crypto.subtle.digest("SHA-256", bytes.slice(0));
+    const digest = await crypto.subtle.digest('SHA-256', bytes.slice(0));
     return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   } catch {
     let h = 0x811c9dc5;
     const step = Math.max(1, Math.floor(bytes.length / 65536));

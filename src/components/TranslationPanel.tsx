@@ -1,26 +1,26 @@
 // 右侧功能面板：四个标签页 -- 划词翻译 / 全文翻译 / 文献总结 / 生成译文 PDF。
 // 无打开 PDF 时内容区显示统一空态；底部挂「历史 / 笔记」可折叠抽屉。
 
-import { useState } from "react";
-import clsx from "clsx";
-import { Languages, FileText, ScrollText, FileOutput, FileSearch } from "lucide-react";
-import type { PanelTab } from "@/types";
-import { useStore } from "@/store/useSettings";
-import TextTranslate from "./TextTranslate";
-import FullTranslate from "./FullTranslate";
-import Summary from "./Summary";
-import OverlayTranslate from "./OverlayTranslate";
-import HistoryNotes from "./HistoryNotes";
+import { useState } from 'react';
+import clsx from 'clsx';
+import { Languages, FileText, ScrollText, FileOutput, FileSearch } from 'lucide-react';
+import type { PanelTab } from '@/types';
+import { useStore } from '@/store/useSettings';
+import TextTranslate from './TextTranslate';
+import FullTranslate from './FullTranslate';
+import Summary from './Summary';
+import OverlayTranslate from './OverlayTranslate';
+import HistoryNotes from './HistoryNotes';
 
 const TABS: { key: PanelTab; label: string; icon: JSX.Element }[] = [
-  { key: "text", label: "划词翻译", icon: <Languages size={16} /> },
-  { key: "full", label: "全文翻译", icon: <FileText size={16} /> },
-  { key: "summary", label: "文献总结", icon: <ScrollText size={16} /> },
-  { key: "overlay", label: "生成译文 PDF", icon: <FileOutput size={16} /> },
+  { key: 'text', label: '划词翻译', icon: <Languages size={16} /> },
+  { key: 'full', label: '全文翻译', icon: <FileText size={16} /> },
+  { key: 'summary', label: '文献总结', icon: <ScrollText size={16} /> },
+  { key: 'overlay', label: '生成译文 PDF', icon: <FileOutput size={16} /> },
 ];
 
 export default function TranslationPanel() {
-  const [tab, setTab] = useState<PanelTab>("text");
+  const [tab, setTab] = useState<PanelTab>('text');
   const activeTabId = useStore((s) => s.activeTabId);
   const hasTab = activeTabId !== null;
 
@@ -33,10 +33,10 @@ export default function TranslationPanel() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={clsx(
-              "flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2 transition-colors",
+              'flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2 transition-colors',
               tab === t.key
-                ? "border-primary-600 text-primary-600 font-medium"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? 'border-primary-600 text-primary-600 font-medium'
+                : 'border-transparent text-slate-500 hover:text-slate-700',
             )}
           >
             {t.icon}
@@ -51,16 +51,16 @@ export default function TranslationPanel() {
           <NoPdfHint />
         ) : (
           <>
-            <div className={clsx("h-full", tab !== "text" && "hidden")}>
+            <div className={clsx('h-full', tab !== 'text' && 'hidden')}>
               <TextTranslate />
             </div>
-            <div className={clsx("h-full", tab !== "full" && "hidden")}>
+            <div className={clsx('h-full', tab !== 'full' && 'hidden')}>
               <FullTranslate />
             </div>
-            <div className={clsx("h-full", tab !== "summary" && "hidden")}>
+            <div className={clsx('h-full', tab !== 'summary' && 'hidden')}>
               <Summary />
             </div>
-            <div className={clsx("h-full", tab !== "overlay" && "hidden")}>
+            <div className={clsx('h-full', tab !== 'overlay' && 'hidden')}>
               <OverlayTranslate />
             </div>
           </>

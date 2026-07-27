@@ -8,21 +8,34 @@
 //
 // 坐标：fitz 与 pdf.js 均以左上角为原点、单位为点(pt)，故 bbox×scale 即像素位置。
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
 import {
-  X, Save, Loader2, AlertCircle, Type, Trash2, RotateCcw,
-  Plus, Minus, MousePointer2, Info,
-} from "lucide-react";
+  X,
+  Save,
+  Loader2,
+  AlertCircle,
+  Type,
+  Trash2,
+  RotateCcw,
+  Plus,
+  Minus,
+  MousePointer2,
+  Info,
+} from 'lucide-react';
 import {
-  analyzePdfForEdit, savePdfEdits, editedPdfBytes, errMsg, bytesToPdfBlob,
-} from "@/services/api";
-import { savePdfFile } from "@/services/pdf";
-import type { AnalyzeResult, EditBlock, EditOp } from "@/types";
+  analyzePdfForEdit,
+  savePdfEdits,
+  editedPdfBytes,
+  errMsg,
+  bytesToPdfBlob,
+} from '@/services/api';
+import { savePdfFile } from '@/services/pdf';
+import type { AnalyzeResult, EditBlock, EditOp } from '@/types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
 ).toString();
 
 interface Props {
@@ -37,12 +50,12 @@ type EditMap = Map<string, EditOp>;
 export default function PdfEditor({ data, name, onClose }: Props) {
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [scale, setScale] = useState(1.3);
   const [edits, setEdits] = useState<EditMap>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [banner, setBanner] = useState<{ kind: "info" | "ok" | "warn"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{ kind: 'info' | 'ok' | 'warn'; text: string } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -51,7 +64,7 @@ export default function PdfEditor({ data, name, onClose }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError("");
+    setError('');
     (async () => {
       try {
         const blob = bytesToPdfBlob(data);
@@ -59,7 +72,7 @@ export default function PdfEditor({ data, name, onClose }: Props) {
         if (cancelled) return;
         setAnalyzeResult(result);
         setBanner({
-          kind: result.mode === "text" ? "info" : "warn",
+          kind: result.mode === 'text' ? 'info' : 'warn',
           text: result.mode_label,
         });
       } catch (e) {
@@ -124,32 +137,32 @@ export default function PdfEditor({ data, name, onClose }: Props) {
         isEdited: !!e,
       };
     },
-    [edits]
+    [edits],
   );
 
   // ---- 保存为新 PDF ----
   const handleSave = useCallback(async () => {
     if (!analyzeResult) return;
     setSaving(true);
-    setBanner({ kind: "info", text: "正在生成编辑后的 PDF..." });
+    setBanner({ kind: 'info', text: '正在生成编辑后的 PDF...' });
     try {
       const ops: EditOp[] = [];
       edits.forEach((e) => ops.push(e));
       if (ops.length === 0) {
-        setBanner({ kind: "info", text: "尚无改动。修改文本块后再保存。" });
+        setBanner({ kind: 'info', text: '尚无改动。修改文本块后再保存。' });
         setSaving(false);
         return;
       }
       const res = await savePdfEdits(analyzeResult.edit_id, ops);
       const bytes = await editedPdfBytes(analyzeResult.edit_id);
-      const outName = name.replace(/\.pdf$/i, "") + "-edited.pdf";
+      const outName = name.replace(/\.pdf$/i, '') + '-edited.pdf';
       const savedPath = await savePdfFile(bytes, outName);
       setBanner({
-        kind: res.mode === "text" ? "ok" : "warn",
+        kind: res.mode === 'text' ? 'ok' : 'warn',
         text: savedPath ? `${res.message}` : `${res.message}（已取消另存）`,
       });
     } catch (e) {
-      setBanner({ kind: "warn", text: `保存失败：${errMsg(e)}` });
+      setBanner({ kind: 'warn', text: `保存失败：${errMsg(e)}` });
     } finally {
       setSaving(false);
     }
@@ -166,20 +179,26 @@ export default function PdfEditor({ data, name, onClose }: Props) {
         <span className="text-xs text-slate-400 truncate max-w-[240px]">{name}</span>
 
         <div className="flex items-center gap-1 ml-2">
-          <button onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
-            className="p-1 hover:bg-slate-100 rounded" title="缩小">
+          <button
+            onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
+            className="p-1 hover:bg-slate-100 rounded"
+            title="缩小"
+          >
             <Minus size={16} />
           </button>
           <span className="w-12 text-center text-sm">{Math.round(scale * 100)}%</span>
-          <button onClick={() => setScale((s) => Math.min(3, s + 0.15))}
-            className="p-1 hover:bg-slate-100 rounded" title="放大">
+          <button
+            onClick={() => setScale((s) => Math.min(3, s + 0.15))}
+            className="p-1 hover:bg-slate-100 rounded"
+            title="放大"
+          >
             <Plus size={16} />
           </button>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-slate-500">
-            {editCount > 0 ? `${editCount} 处改动` : "点击文本块开始编辑"}
+            {editCount > 0 ? `${editCount} 处改动` : '点击文本块开始编辑'}
           </span>
           <button
             onClick={handleSave}
@@ -199,11 +218,11 @@ export default function PdfEditor({ data, name, onClose }: Props) {
       {banner && (
         <div
           className={`flex items-center gap-2 px-4 py-2 text-sm shrink-0 ${
-            banner.kind === "ok"
-              ? "bg-green-50 text-green-700 border-b border-green-200"
-              : banner.kind === "warn"
-              ? "bg-amber-50 text-amber-700 border-b border-amber-200"
-              : "bg-sky-50 text-sky-700 border-b border-sky-200"
+            banner.kind === 'ok'
+              ? 'bg-green-50 text-green-700 border-b border-green-200'
+              : banner.kind === 'warn'
+                ? 'bg-amber-50 text-amber-700 border-b border-amber-200'
+                : 'bg-sky-50 text-sky-700 border-b border-sky-200'
           }`}
         >
           <Info size={15} className="shrink-0" />
@@ -223,7 +242,9 @@ export default function PdfEditor({ data, name, onClose }: Props) {
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center p-6">
             <AlertCircle size={40} className="text-red-400" strokeWidth={1.5} />
             <p className="text-sm text-red-200 max-w-md">{error}</p>
-            <button onClick={onClose} className="px-3 py-1.5 text-sm bg-white/90 rounded">关闭</button>
+            <button onClick={onClose} className="px-3 py-1.5 text-sm bg-white/90 rounded">
+              关闭
+            </button>
           </div>
         )}
 
@@ -261,12 +282,16 @@ export default function PdfEditor({ data, name, onClose }: Props) {
 
 interface PageLayerProps {
   pdfDoc: pdfjsLib.PDFDocumentProxy | null;
-  page: import("@/types").EditPage;
+  page: import('@/types').EditPage;
   scale: number;
   edits: EditMap;
   effective: (b: EditBlock) => {
-    text: string; bbox: [number, number, number, number];
-    size: number; color: string; deleted: boolean; isEdited: boolean;
+    text: string;
+    bbox: [number, number, number, number];
+    size: number;
+    color: string;
+    deleted: boolean;
+    isEdited: boolean;
   };
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -275,7 +300,14 @@ interface PageLayerProps {
 }
 
 function PageLayer({
-  pdfDoc, page, scale, effective, selectedId, onSelect, onPatch, onReset,
+  pdfDoc,
+  page,
+  scale,
+  effective,
+  selectedId,
+  onSelect,
+  onPatch,
+  onReset,
 }: PageLayerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -290,8 +322,11 @@ function PageLayer({
     const el = wrapRef.current;
     if (!el) return;
     const io = new IntersectionObserver(
-      (entries) => entries.forEach((en) => { if (en.isIntersecting) setVisible(true); }),
-      { rootMargin: "600px 0px" }
+      (entries) =>
+        entries.forEach((en) => {
+          if (en.isIntersecting) setVisible(true);
+        }),
+      { rootMargin: '600px 0px' },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -313,7 +348,7 @@ function PageLayer({
         if (!canvas) return;
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
         await p.render({ canvasContext: ctx, viewport }).promise;
         renderedRef.current = true;
@@ -321,7 +356,9 @@ function PageLayer({
         /* 背景渲染失败不影响编辑框 */
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [visible, pdfDoc, page.page, scale]);
 
   return (
@@ -358,8 +395,12 @@ interface BlockBoxProps {
   block: EditBlock;
   scale: number;
   eff: {
-    text: string; bbox: [number, number, number, number];
-    size: number; color: string; deleted: boolean; isEdited: boolean;
+    text: string;
+    bbox: [number, number, number, number];
+    size: number;
+    color: string;
+    deleted: boolean;
+    isEdited: boolean;
   };
   selected: boolean;
   onSelect: (id: string | null) => void;
@@ -368,7 +409,9 @@ interface BlockBoxProps {
 }
 
 function BlockBox({ block, scale, eff, selected, onSelect, onPatch, onReset }: BlockBoxProps) {
-  const dragRef = useRef<{ sx: number; sy: number; bbox: [number, number, number, number] } | null>(null);
+  const dragRef = useRef<{ sx: number; sy: number; bbox: [number, number, number, number] } | null>(
+    null,
+  );
 
   const [ox0, oy0, ox1, oy1] = block.bbox; // 原始位置（白底盖旧字）
   const [x0, y0, x1, y1] = eff.bbox; // 生效位置
@@ -390,18 +433,18 @@ function BlockBox({ block, scale, eff, selected, onSelect, onPatch, onReset }: B
     };
     const onUp = () => {
       dragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   const fontStyle: React.CSSProperties = {
     fontSize: eff.size * scale,
     color: eff.color,
     fontWeight: block.bold ? 600 : 400,
-    fontStyle: block.italic ? "italic" : "normal",
+    fontStyle: block.italic ? 'italic' : 'normal',
     lineHeight: 1.1,
   };
 
@@ -486,33 +529,57 @@ function BlockBox({ block, scale, eff, selected, onSelect, onPatch, onReset }: B
 }
 
 function BlockToolbar({
-  size, color, isEdited, onSize, onColor, onDelete, onReset,
+  size,
+  color,
+  isEdited,
+  onSize,
+  onColor,
+  onDelete,
+  onReset,
 }: {
-  size: number; color: string; isEdited: boolean;
-  onSize: (s: number) => void; onColor: (c: string) => void;
-  onDelete: () => void; onReset: () => void;
+  size: number;
+  color: string;
+  isEdited: boolean;
+  onSize: (s: number) => void;
+  onColor: (c: string) => void;
+  onDelete: () => void;
+  onReset: () => void;
 }) {
   return (
     <div
       className="absolute left-0 top-full mt-1 flex items-center gap-1 px-1.5 py-1 bg-white rounded shadow-lg border text-slate-600 z-30"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <button className="p-1 hover:bg-slate-100 rounded" title="减小字号"
-        onClick={() => onSize(Math.max(4, Math.round((size - 1) * 10) / 10))}>
+      <button
+        className="p-1 hover:bg-slate-100 rounded"
+        title="减小字号"
+        onClick={() => onSize(Math.max(4, Math.round((size - 1) * 10) / 10))}
+      >
         <Minus size={13} />
       </button>
       <span className="text-[11px] w-8 text-center tabular-nums">{size.toFixed(1)}</span>
-      <button className="p-1 hover:bg-slate-100 rounded" title="增大字号"
-        onClick={() => onSize(Math.round((size + 1) * 10) / 10)}>
+      <button
+        className="p-1 hover:bg-slate-100 rounded"
+        title="增大字号"
+        onClick={() => onSize(Math.round((size + 1) * 10) / 10)}
+      >
         <Plus size={13} />
       </button>
       <span className="w-px h-4 bg-slate-200 mx-0.5" />
       <label className="p-0.5 hover:bg-slate-100 rounded cursor-pointer" title="文字颜色">
-        <input type="color" value={color} onChange={(e) => onColor(e.target.value)}
-          className="w-4 h-4 cursor-pointer align-middle" />
+        <input
+          type="color"
+          value={color}
+          onChange={(e) => onColor(e.target.value)}
+          className="w-4 h-4 cursor-pointer align-middle"
+        />
       </label>
       <span className="w-px h-4 bg-slate-200 mx-0.5" />
-      <button className="p-1 hover:bg-red-50 text-red-500 rounded" title="删除此文本块" onClick={onDelete}>
+      <button
+        className="p-1 hover:bg-red-50 text-red-500 rounded"
+        title="删除此文本块"
+        onClick={onDelete}
+      >
         <Trash2 size={13} />
       </button>
       {isEdited && (
@@ -526,7 +593,12 @@ function BlockToolbar({
 
 // 由 PDF 点坐标算出绝对定位样式
 function rectStyle(
-  x0: number, y0: number, x1: number, y1: number, scale: number, pad = false
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  scale: number,
+  pad = false,
 ): React.CSSProperties {
   const p = pad ? 1 : 0;
   return {

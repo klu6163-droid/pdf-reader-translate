@@ -11,24 +11,22 @@ import type {
   OpenAnnotResult,
   PdfAnnotation,
   SaveAnnotResult,
-} from "@/types";
+} from '@/types';
 
-const BASE = "http://127.0.0.1:8765";
+const BASE = 'http://127.0.0.1:8765';
 
 /** 后端未连接时抛出的可识别错误，UI 可据此给出「后端正在启动」提示。 */
 export class BackendUnreachableError extends Error {
   constructor() {
-    super(
-      "后端服务尚未就绪。首次启动可能需要 10-20 秒完成自解压，请稍候几秒后重试。"
-    );
-    this.name = "BackendUnreachableError";
+    super('后端服务尚未就绪。首次启动可能需要 10-20 秒完成自解压，请稍候几秒后重试。');
+    this.name = 'BackendUnreachableError';
   }
 }
 
 export class TimeoutError extends Error {
   constructor(seconds: number) {
     super(`请求超时（超过 ${seconds} 秒）。可能是网络或上游 API 响应过慢。`);
-    this.name = "TimeoutError";
+    this.name = 'TimeoutError';
   }
 }
 
@@ -37,11 +35,7 @@ export class TimeoutError extends Error {
  * - 带超时（AbortController），避免请求永久挂起
  * - 把底层 "Failed to fetch"（后端没起/端口不通）翻译成可读错误
  */
-async function apiFetch(
-  path: string,
-  init: RequestInit = {},
-  timeoutSec = 60
-): Promise<Response> {
+async function apiFetch(path: string, init: RequestInit = {}, timeoutSec = 60): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
   try {
@@ -50,7 +44,7 @@ async function apiFetch(
       signal: init.signal ?? controller.signal,
     });
   } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") {
+    if (e instanceof DOMException && e.name === 'AbortError') {
       if (init.signal?.aborted) throw e;
       throw new TimeoutError(timeoutSec);
     }
@@ -79,22 +73,22 @@ export async function checkBackend(): Promise<boolean> {
 export function bytesToPdfBlob(data: Uint8Array): Blob {
   const copy = new Uint8Array(data.length);
   copy.set(data);
-  return new Blob([copy.buffer], { type: "application/pdf" });
+  return new Blob([copy.buffer], { type: 'application/pdf' });
 }
 
 /** 测试 API 配置连通性 */
 export async function testSettings(
-  settings: LLMSettings
+  settings: LLMSettings,
 ): Promise<{ ok: boolean; message: string }> {
   try {
     const resp = await apiFetch(
-      "/api/settings/test",
+      '/api/settings/test',
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: toConfig(settings) }),
       },
-      35
+      35,
     );
     if (!resp.ok) return { ok: false, message: `HTTP ${resp.status}` };
     return resp.json();
@@ -107,23 +101,23 @@ export async function testSettings(
 export async function translateText(
   text: string,
   settings: LLMSettings,
-  targetLang = "中文",
-  signal?: AbortSignal
+  targetLang = '中文',
+  signal?: AbortSignal,
 ): Promise<TextTranslateResult> {
   const resp = await apiFetch(
-    "/api/translate/text",
+    '/api/translate/text',
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text,
-        source_lang: "auto",
+        source_lang: 'auto',
         target_lang: targetLang,
         config: toConfig(settings),
       }),
       signal,
     },
-    90
+    90,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
@@ -134,16 +128,16 @@ export async function startPdfTranslate(
   file: File | Blob,
   filename: string,
   settings: LLMSettings,
-  targetLang = "zh"
+  targetLang = 'zh',
 ): Promise<string> {
   const form = new FormData();
-  form.append("file", file, filename);
-  form.append("target_lang", targetLang);
+  form.append('file', file, filename);
+  form.append('target_lang', targetLang);
 
   const resp = await apiFetch(
-    "/api/translate/pdf/start",
-    { method: "POST", body: form, headers: llmHeaders(settings) },
-    120
+    '/api/translate/pdf/start',
+    { method: 'POST', body: form, headers: llmHeaders(settings) },
+    120,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   const data = await resp.json();
@@ -154,7 +148,7 @@ export async function startPdfTranslate(
 export function subscribePdfProgress(
   taskId: string,
   onEvent: (e: PdfProgressEvent) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
 ): () => void {
   const es = new EventSource(`${BASE}/api/translate/pdf/progress/${taskId}`);
   es.onmessage = (ev) => {
@@ -168,7 +162,7 @@ export function subscribePdfProgress(
   };
   es.onerror = () => {
     es.close();
-    onError?.(new Error("进度连接中断"));
+    onError?.(new Error('进度连接中断'));
   };
   return () => es.close();
 }
@@ -185,15 +179,15 @@ export async function startOverlayTrans(
   file: File | Blob,
   filename: string,
   settings: LLMSettings,
-  targetLang = "zh"
+  targetLang = 'zh',
 ): Promise<string> {
   const form = new FormData();
-  form.append("file", file, filename);
-  form.append("target_lang", targetLang);
+  form.append('file', file, filename);
+  form.append('target_lang', targetLang);
   const resp = await apiFetch(
-    "/api/overlay/pdf/start",
-    { method: "POST", body: form, headers: llmHeaders(settings) },
-    120
+    '/api/overlay/pdf/start',
+    { method: 'POST', body: form, headers: llmHeaders(settings) },
+    120,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   const data = await resp.json();
@@ -204,7 +198,7 @@ export async function startOverlayTrans(
 export function subscribeOverlayProgress(
   taskId: string,
   onEvent: (e: PdfProgressEvent) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
 ): () => void {
   const es = new EventSource(`${BASE}/api/overlay/pdf/progress/${taskId}`);
   es.onmessage = (ev) => {
@@ -218,7 +212,7 @@ export function subscribeOverlayProgress(
   };
   es.onerror = () => {
     es.close();
-    onError?.(new Error("进度连接中断"));
+    onError?.(new Error('进度连接中断'));
   };
   return () => es.close();
 }
@@ -235,17 +229,17 @@ export async function streamSummary(
   settings: LLMSettings,
   onDelta: (text: string) => void,
   onDone: () => void,
-  onError: (err: string) => void
+  onError: (err: string) => void,
 ): Promise<void> {
   const form = new FormData();
-  form.append("file", file, filename);
+  form.append('file', file, filename);
 
   let resp: Response;
   try {
     resp = await apiFetch(
-      "/api/summary/stream",
-      { method: "POST", body: form, headers: llmHeaders(settings) },
-      300
+      '/api/summary/stream',
+      { method: 'POST', body: form, headers: llmHeaders(settings) },
+      300,
     );
   } catch (e) {
     onError(errMsg(e));
@@ -257,21 +251,21 @@ export async function streamSummary(
   }
   const reader = resp.body?.getReader();
   if (!reader) {
-    onError("无法读取响应流");
+    onError('无法读取响应流');
     return;
   }
   const decoder = new TextDecoder();
-  let buffer = "";
+  let buffer = '';
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop() ?? "";
+    const lines = buffer.split('\n\n');
+    buffer = lines.pop() ?? '';
     for (const block of lines) {
       const line = block.trim();
-      if (!line.startsWith("data:")) continue;
+      if (!line.startsWith('data:')) continue;
       const payload = line.slice(5).trim();
       try {
         const obj = JSON.parse(payload);
@@ -297,32 +291,25 @@ export async function streamSummary(
 /** 上传 PDF 解析文本块，返回 edit_id + 每页文本块 + 预测编辑模式。 */
 export async function analyzePdfForEdit(
   file: File | Blob,
-  filename: string
+  filename: string,
 ): Promise<AnalyzeResult> {
   const form = new FormData();
-  form.append("file", file, filename);
-  const resp = await apiFetch(
-    "/api/edit/pdf/analyze",
-    { method: "POST", body: form },
-    120
-  );
+  form.append('file', file, filename);
+  const resp = await apiFetch('/api/edit/pdf/analyze', { method: 'POST', body: form }, 120);
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
 }
 
 /** 应用编辑并另存为新 PDF，返回实际模式与友好提示。 */
-export async function savePdfEdits(
-  editId: string,
-  edits: EditOp[]
-): Promise<SaveEditsResult> {
+export async function savePdfEdits(editId: string, edits: EditOp[]): Promise<SaveEditsResult> {
   const resp = await apiFetch(
-    "/api/edit/pdf/save",
+    '/api/edit/pdf/save',
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ edit_id: editId, edits }),
     },
-    120
+    120,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
@@ -338,13 +325,10 @@ export async function editedPdfBytes(editId: string): Promise<Uint8Array> {
 // ---- PDF 批注 ----
 
 /** 上传 PDF 建立批注会话，返回 annot_id + 页尺寸 + PDF 内已有批注。 */
-export async function openPdfAnnot(
-  file: File | Blob,
-  filename: string
-): Promise<OpenAnnotResult> {
+export async function openPdfAnnot(file: File | Blob, filename: string): Promise<OpenAnnotResult> {
   const form = new FormData();
-  form.append("file", file, filename);
-  const resp = await apiFetch("/api/annot/pdf/open", { method: "POST", body: form }, 120);
+  form.append('file', file, filename);
+  const resp = await apiFetch('/api/annot/pdf/open', { method: 'POST', body: form }, 120);
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
 }
@@ -352,16 +336,16 @@ export async function openPdfAnnot(
 /** 新增一条批注（同步到后端会话）。 */
 export async function addPdfAnnot(
   annotId: string,
-  annot: Partial<PdfAnnotation>
+  annot: Partial<PdfAnnotation>,
 ): Promise<PdfAnnotation> {
   const resp = await apiFetch(
     `/api/annot/pdf/${annotId}/annotations`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(annot),
     },
-    30
+    30,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
@@ -371,16 +355,16 @@ export async function addPdfAnnot(
 export async function updatePdfAnnot(
   annotId: string,
   aid: string,
-  patch: Partial<PdfAnnotation>
+  patch: Partial<PdfAnnotation>,
 ): Promise<PdfAnnotation> {
   const resp = await apiFetch(
     `/api/annot/pdf/${annotId}/annotations/${aid}`,
     {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     },
-    30
+    30,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
@@ -390,8 +374,8 @@ export async function updatePdfAnnot(
 export async function deletePdfAnnot(annotId: string, aid: string): Promise<void> {
   const resp = await apiFetch(
     `/api/annot/pdf/${annotId}/annotations/${aid}`,
-    { method: "DELETE" },
-    30
+    { method: 'DELETE' },
+    30,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
 }
@@ -399,16 +383,16 @@ export async function deletePdfAnnot(annotId: string, aid: string): Promise<void
 /** 把批注写入 PDF 副本并生成 annotated.pdf（body 传完整列表，前端为准）。 */
 export async function savePdfAnnots(
   annotId: string,
-  annotations: PdfAnnotation[]
+  annotations: PdfAnnotation[],
 ): Promise<SaveAnnotResult> {
   const resp = await apiFetch(
     `/api/annot/pdf/${annotId}/save`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ annotations }),
     },
-    120
+    120,
   );
   if (!resp.ok) throw new Error(await safeDetail(resp));
   return resp.json();
@@ -424,7 +408,7 @@ export async function annotatedPdfBytes(annotId: string): Promise<Uint8Array> {
 /** 导出批注列表（json / markdown），返回文本内容。 */
 export async function exportPdfAnnots(
   annotId: string,
-  format: "json" | "markdown"
+  format: 'json' | 'markdown',
 ): Promise<string> {
   const resp = await apiFetch(`/api/annot/pdf/${annotId}/export?format=${format}`, {}, 30);
   if (!resp.ok) throw new Error(await safeDetail(resp));
@@ -433,9 +417,9 @@ export async function exportPdfAnnots(
 
 function llmHeaders(s: LLMSettings): Record<string, string> {
   return {
-    "x-llm-api-key": s.apiKey,
-    "x-llm-base-url": s.baseUrl,
-    "x-llm-model": s.model,
+    'x-llm-api-key': s.apiKey,
+    'x-llm-base-url': s.baseUrl,
+    'x-llm-model': s.model,
   };
 }
 

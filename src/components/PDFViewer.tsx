@@ -1,26 +1,38 @@
 // PDF.js 渲染器：负责渲染页面、翻页、缩放、滚动、文字选中。
 // 页面容器会一次创建，实际 canvas/textLayer 只在视口附近懒渲染。
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import * as pdfjsLib from "pdfjs-dist";
+import { useEffect, useRef, useState, useCallback } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
 import {
-  ZoomIn, ZoomOut, AlertCircle, Loader2, Download,
-  Search, Maximize2, MousePointer2, Hand, Highlighter, Underline,
-  PenLine, StickyNote, Undo2, Redo2,
-} from "lucide-react";
-import { savePdfFile } from "@/services/pdf";
-import { useStore } from "@/store/useSettings";
-import ToolBtn from "./shared/ToolBtn";
-import type { AnnotTool } from "@/types";
+  ZoomIn,
+  ZoomOut,
+  AlertCircle,
+  Loader2,
+  Download,
+  Search,
+  Maximize2,
+  MousePointer2,
+  Hand,
+  Highlighter,
+  Underline,
+  PenLine,
+  StickyNote,
+  Undo2,
+  Redo2,
+} from 'lucide-react';
+import { savePdfFile } from '@/services/pdf';
+import { useStore } from '@/store/useSettings';
+import ToolBtn from './shared/ToolBtn';
+import type { AnnotTool } from '@/types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
 ).toString();
 
 interface Props {
   data: Uint8Array | string;
-  side: "left" | "right";
+  side: 'left' | 'right';
   currentPage: number;
   onPageChange?: (p: number) => void;
   suggestedName?: string;
@@ -31,11 +43,19 @@ interface Props {
   syncPage?: boolean;
 }
 
-export default function PDFViewer({ data, side, currentPage, onPageChange, suggestedName, onOpenAnnot, syncPage }: Props) {
+export default function PDFViewer({
+  data,
+  side,
+  currentPage,
+  onPageChange,
+  suggestedName,
+  onOpenAnnot,
+  syncPage,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1.2);
   const [numPages, setNumPages] = useState(0);
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -49,15 +69,17 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   const panRef = useRef<{ x: number; y: number } | null>(null);
 
   // 阅读器视图模式：select=可选文字（划词）/ hand=手型平移
-  const [viewMode, setViewMode] = useState<"select" | "hand">("select");
+  const [viewMode, setViewMode] = useState<'select' | 'hand'>('select');
   // 搜索
-  const [searchQ, setSearchQ] = useState("");
-  const [searchResult, setSearchResult] = useState<{ count: number; firstPage: number } | null>(null);
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResult, setSearchResult] = useState<{ count: number; firstPage: number } | null>(
+    null,
+  );
   const [searching, setSearching] = useState(false);
   // 页码跳转输入
   const [pageInput, setPageInput] = useState(String(currentPage));
 
-  const backendOnline = useStore((s) => s.backendStatus) === "online";
+  const backendOnline = useStore((s) => s.backendStatus) === 'online';
 
   const setSelection = useSelectionReporter(side);
 
@@ -76,12 +98,12 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
 
   useEffect(() => {
     let cancelled = false;
-    setLoadError("");
+    setLoadError('');
     setLoading(true);
     setNumPages(0);
     const load = async () => {
       try {
-        const src = typeof data === "string" ? { url: data } : { data: data.slice(0) };
+        const src = typeof data === 'string' ? { url: data } : { data: data.slice(0) };
         const doc = await pdfjsLib.getDocument(src as any).promise;
         if (cancelled) return;
         pdfRef.current = doc;
@@ -90,13 +112,11 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
       } catch (e) {
         if (cancelled) return;
         setLoading(false);
-        const isUrl = typeof data === "string";
+        const isUrl = typeof data === 'string';
         setLoadError(
           isUrl
-            ? "无法加载翻译结果 PDF（后端可能已重启或文件已清理）"
-            : `PDF 加载失败：${
-                e instanceof Error ? e.message : "文件可能损坏或不是有效 PDF"
-              }`
+            ? '无法加载翻译结果 PDF（后端可能已重启或文件已清理）'
+            : `PDF 加载失败：${e instanceof Error ? e.message : '文件可能损坏或不是有效 PDF'}`,
         );
       }
     };
@@ -115,7 +135,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
 
     let cancelled = false;
     let observer: IntersectionObserver | null = null;
-    container.innerHTML = "";
+    container.innerHTML = '';
     pageElsRef.current.clear();
     renderedPagesRef.current.clear();
 
@@ -126,8 +146,8 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         const page = await doc.getPage(pageNumber);
         if (cancelled) return;
         const viewport = page.getViewport({ scale });
-        const canvas = pageDiv.querySelector("canvas");
-        const textLayerDiv = pageDiv.querySelector<HTMLDivElement>(".textLayer");
+        const canvas = pageDiv.querySelector('canvas');
+        const textLayerDiv = pageDiv.querySelector<HTMLDivElement>('.textLayer');
         if (!canvas || !textLayerDiv) return;
 
         syncPageLayerSize(pageDiv, textLayerDiv, viewport);
@@ -137,7 +157,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         canvas.height = Math.ceil(viewport.height);
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         await page.render({ canvasContext: ctx, viewport }).promise;
@@ -146,7 +166,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         try {
           const textContent = await page.getTextContent();
           const lib = pdfjsLib as any;
-          if (typeof lib.TextLayer === "function") {
+          if (typeof lib.TextLayer === 'function') {
             const textLayer = new lib.TextLayer({
               textContentSource: textContent,
               container: textLayerDiv,
@@ -154,7 +174,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
             });
             await textLayer.render();
             appendEndOfContent(textLayerDiv);
-          } else if (typeof lib.renderTextLayer === "function") {
+          } else if (typeof lib.renderTextLayer === 'function') {
             await lib.renderTextLayer({
               textContentSource: textContent,
               container: textLayerDiv,
@@ -167,11 +187,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         }
       } catch (e) {
         if (!cancelled) {
-          setLoadError(
-            `PDF 渲染失败：${
-              e instanceof Error ? e.message : "worker 可能未正确加载"
-            }`
-          );
+          setLoadError(`PDF 渲染失败：${e instanceof Error ? e.message : 'worker 可能未正确加载'}`);
         }
       }
     };
@@ -189,7 +205,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
               }
             }
           },
-          { root: container, rootMargin: "900px 0px" }
+          { root: container, rootMargin: '900px 0px' },
         );
 
         for (let i = 1; i <= doc.numPages; i++) {
@@ -197,22 +213,22 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           const page = await doc.getPage(i);
           const viewport = page.getViewport({ scale });
 
-          const pageDiv = document.createElement("div");
-          pageDiv.className = "relative mx-auto my-3 shadow bg-white";
+          const pageDiv = document.createElement('div');
+          pageDiv.className = 'relative mx-auto my-3 shadow bg-white';
           pageDiv.style.width = `${viewport.width}px`;
           pageDiv.style.height = `${viewport.height}px`;
-          pageDiv.style.setProperty("--scale-factor", String(viewport.scale));
+          pageDiv.style.setProperty('--scale-factor', String(viewport.scale));
           pageDiv.dataset.page = String(i);
 
-          const canvas = document.createElement("canvas");
+          const canvas = document.createElement('canvas');
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
           canvas.style.width = `${viewport.width}px`;
           canvas.style.height = `${viewport.height}px`;
           pageDiv.appendChild(canvas);
 
-          const textLayerDiv = document.createElement("div");
-          textLayerDiv.className = "textLayer";
+          const textLayerDiv = document.createElement('div');
+          textLayerDiv.className = 'textLayer';
           syncPageLayerSize(pageDiv, textLayerDiv, viewport);
           pageDiv.appendChild(textLayerDiv);
 
@@ -221,19 +237,15 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           observer.observe(pageDiv);
         }
 
-        if (side === "right" && syncPageRef.current) {
+        if (side === 'right' && syncPageRef.current) {
           requestAnimationFrame(() => {
             const el = pageElsRef.current.get(currentPageRef.current);
-            if (el) container.scrollTo({ top: el.offsetTop - 12, behavior: "auto" });
+            if (el) container.scrollTo({ top: el.offsetTop - 12, behavior: 'auto' });
           });
         }
       } catch (e) {
         if (!cancelled) {
-          setLoadError(
-            `PDF 渲染失败：${
-              e instanceof Error ? e.message : "worker 可能未正确加载"
-            }`
-          );
+          setLoadError(`PDF 渲染失败：${e instanceof Error ? e.message : 'worker 可能未正确加载'}`);
         }
       }
     };
@@ -263,18 +275,18 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   }, [onPageChange]);
 
   useEffect(() => {
-    if (side !== "right") return;
+    if (side !== 'right') return;
     if (syncPage === false) return; // 关闭跟随：译文独立翻页
     const el = pageElsRef.current.get(currentPage);
     const container = containerRef.current;
     if (el && container) {
-      container.scrollTo({ top: el.offsetTop - 12, behavior: "smooth" });
+      container.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' });
     }
   }, [currentPage, side, numPages, syncPage]);
 
   const onMouseUp = useCallback(() => {
-    if (side !== "left") return;
-    if (viewMode !== "select") return; // 手型模式不上报选中
+    if (side !== 'left') return;
+    if (viewMode !== 'select') return; // 手型模式不上报选中
     const sel = window.getSelection();
     const text = sel?.toString().trim();
     if (!text || !sel) return;
@@ -282,15 +294,18 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   }, [side, currentPage, setSelection, viewMode]);
 
   // 跳转到指定页（页码输入 / 搜索结果）
-  const jumpToPage = useCallback((p: number) => {
-    const n = Math.max(1, Math.min(numPages || 1, p));
-    const el = pageElsRef.current.get(n);
-    const container = containerRef.current;
-    if (el && container) {
-      container.scrollTo({ top: el.offsetTop - 12, behavior: "smooth" });
-    }
-    onPageChange?.(n);
-  }, [numPages, onPageChange]);
+  const jumpToPage = useCallback(
+    (p: number) => {
+      const n = Math.max(1, Math.min(numPages || 1, p));
+      const el = pageElsRef.current.get(n);
+      const container = containerRef.current;
+      if (el && container) {
+        container.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' });
+      }
+      onPageChange?.(n);
+    },
+    [numPages, onPageChange],
+  );
 
   // 适合宽度：按容器宽与第 1 页原始宽计算缩放
   const fitWidth = useCallback(async () => {
@@ -330,10 +345,10 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
             const page = await doc.getPage(i);
             const tc = await page.getTextContent();
             text = (tc.items as any[])
-              .map((it) => (typeof it.str === "string" ? it.str : ""))
-              .join(" ");
+              .map((it) => (typeof it.str === 'string' ? it.str : ''))
+              .join(' ');
           } catch {
-            text = "";
+            text = '';
           }
           pageTextRef.current.set(i, text);
         }
@@ -355,22 +370,19 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   // 手型工具：按下拖动平移
   const onPanDown = useCallback(
     (e: React.PointerEvent) => {
-      if (viewMode !== "hand") return;
+      if (viewMode !== 'hand') return;
       panRef.current = { x: e.clientX, y: e.clientY };
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     },
-    [viewMode]
+    [viewMode],
   );
-  const onPanMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!panRef.current) return;
-      const dx = e.clientX - panRef.current.x;
-      const dy = e.clientY - panRef.current.y;
-      panRef.current = { x: e.clientX, y: e.clientY };
-      containerRef.current?.scrollBy(-dx, -dy);
-    },
-    []
-  );
+  const onPanMove = useCallback((e: React.PointerEvent) => {
+    if (!panRef.current) return;
+    const dx = e.clientX - panRef.current.x;
+    const dy = e.clientY - panRef.current.y;
+    panRef.current = { x: e.clientX, y: e.clientY };
+    containerRef.current?.scrollBy(-dx, -dy);
+  }, []);
   const onPanUp = useCallback(() => {
     panRef.current = null;
   }, []);
@@ -379,17 +391,17 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
   const handleExport = useCallback(async () => {
     try {
       let bytes: Uint8Array;
-      const name = suggestedName || "document.pdf";
-      if (typeof data === "string") {
+      const name = suggestedName || 'document.pdf';
+      if (typeof data === 'string') {
         const resp = await fetch(data);
-        if (!resp.ok) throw new Error("获取 PDF 失败");
+        if (!resp.ok) throw new Error('获取 PDF 失败');
         bytes = new Uint8Array(await resp.arrayBuffer());
       } else {
         bytes = data;
       }
       await savePdfFile(bytes, name);
     } catch (e) {
-      console.error("导出失败:", e);
+      console.error('导出失败:', e);
     }
   }, [data, suggestedName]);
 
@@ -399,15 +411,15 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
       <div className="flex items-center gap-1.5 px-3 h-10 bg-white border-b text-sm shrink-0 overflow-x-auto whitespace-nowrap">
         <input
           value={pageInput}
-          onChange={(e) => setPageInput(e.target.value.replace(/[^\d]/g, ""))}
+          onChange={(e) => setPageInput(e.target.value.replace(/[^\d]/g, ''))}
           onKeyDown={(e) => {
-            if (e.key === "Enter") jumpToPage(Number(pageInput) || 1);
+            if (e.key === 'Enter') jumpToPage(Number(pageInput) || 1);
           }}
           onBlur={() => jumpToPage(Number(pageInput) || 1)}
           className="w-10 px-1 py-0.5 text-center border border-slate-200 rounded text-xs"
           title="跳转到页码（回车）"
         />
-        <span className="text-slate-400 text-xs">/ {numPages || "-"}</span>
+        <span className="text-slate-400 text-xs">/ {numPages || '-'}</span>
 
         <span className="w-px h-5 bg-slate-200 mx-1" />
         <button
@@ -425,11 +437,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
         >
           <ZoomIn size={16} />
         </button>
-        <button
-          onClick={fitWidth}
-          className="p-1 hover:bg-slate-100 rounded"
-          title="适合宽度"
-        >
+        <button onClick={fitWidth} className="p-1 hover:bg-slate-100 rounded" title="适合宽度">
           <Maximize2 size={15} />
         </button>
 
@@ -438,7 +446,7 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           value={searchQ}
           onChange={(e) => setSearchQ(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") runSearch();
+            if (e.key === 'Enter') runSearch();
           }}
           placeholder="搜索"
           className="w-24 px-2 py-0.5 border border-slate-200 rounded text-xs"
@@ -449,17 +457,11 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           className="p-1 hover:bg-slate-100 rounded disabled:opacity-50"
           title="搜索"
         >
-          {searching ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Search size={14} />
-          )}
+          {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
         </button>
         {searchResult && (
           <span className="text-xs text-slate-400 whitespace-nowrap">
-            {searchResult.count > 0
-              ? `${searchResult.count} 处`
-              : "无结果"}
+            {searchResult.count > 0 ? `${searchResult.count} 处` : '无结果'}
           </span>
         )}
 
@@ -494,108 +496,95 @@ export default function PDFViewer({ data, side, currentPage, onPageChange, sugge
           onPointerMove={onPanMove}
           onPointerUp={onPanUp}
           className={`h-full overflow-auto bg-slate-200 px-2 ${
-            viewMode === "hand" ? "cursor-grab mode-hand active:cursor-grabbing" : ""
+            viewMode === 'hand' ? 'cursor-grab mode-hand active:cursor-grabbing' : ''
           }`}
         />
       </div>
 
       {/* 底部工具栏：选择 / 手型 / 高亮 / 下划线 / 批注 / 笔记 / 撤销 / 重做（仅阅读侧） */}
-      {side === "left" && onOpenAnnot && (
+      {side === 'left' && onOpenAnnot && (
         <div className="flex items-center gap-0.5 px-2 h-9 bg-white border-t text-slate-600 shrink-0 overflow-x-auto whitespace-nowrap">
           <ToolBtn
-            active={viewMode === "select"}
-            onClick={() => setViewMode("select")}
+            active={viewMode === 'select'}
+            onClick={() => setViewMode('select')}
             icon={<MousePointer2 size={16} />}
             label="选择"
           />
           <ToolBtn
-            active={viewMode === "hand"}
-            onClick={() => setViewMode("hand")}
+            active={viewMode === 'hand'}
+            onClick={() => setViewMode('hand')}
             icon={<Hand size={16} />}
             label="手型"
           />
           <span className="w-px h-5 bg-slate-200 mx-1" />
           <ToolBtn
-            onClick={() => onOpenAnnot("highlight")}
+            onClick={() => onOpenAnnot('highlight')}
             icon={<Highlighter size={16} />}
             label="高亮"
             disabled={!backendOnline}
           />
           <ToolBtn
-            onClick={() => onOpenAnnot("underline")}
+            onClick={() => onOpenAnnot('underline')}
             icon={<Underline size={16} />}
             label="下划线"
             disabled={!backendOnline}
           />
           <ToolBtn
-            onClick={() => onOpenAnnot("select")}
+            onClick={() => onOpenAnnot('select')}
             icon={<PenLine size={16} />}
             label="批注"
             disabled={!backendOnline}
           />
           <ToolBtn
-            onClick={() => onOpenAnnot("note")}
+            onClick={() => onOpenAnnot('note')}
             icon={<StickyNote size={16} />}
             label="笔记"
             disabled={!backendOnline}
           />
           <span className="w-px h-5 bg-slate-200 mx-1" />
-          <ToolBtn
-            icon={<Undo2 size={16} />}
-            label="撤销"
-            disabled
-            title="在批注模式中可用"
-          />
-          <ToolBtn
-            icon={<Redo2 size={16} />}
-            label="重做"
-            disabled
-            title="在批注模式中可用"
-          />
+          <ToolBtn icon={<Undo2 size={16} />} label="撤销" disabled title="在批注模式中可用" />
+          <ToolBtn icon={<Redo2 size={16} />} label="重做" disabled title="在批注模式中可用" />
         </div>
       )}
     </div>
   );
 }
 
-
 function syncPageLayerSize(
   pageDiv: HTMLDivElement,
   textLayerDiv: HTMLDivElement,
-  viewport: pdfjsLib.PageViewport
+  viewport: pdfjsLib.PageViewport,
 ) {
   const width = `${viewport.width}px`;
   const height = `${viewport.height}px`;
   pageDiv.style.width = width;
   pageDiv.style.height = height;
-  pageDiv.style.setProperty("--scale-factor", String(viewport.scale));
+  pageDiv.style.setProperty('--scale-factor', String(viewport.scale));
   textLayerDiv.style.width = width;
   textLayerDiv.style.height = height;
-  textLayerDiv.style.setProperty("--scale-factor", String(viewport.scale));
+  textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
 }
 
 function appendEndOfContent(textLayerDiv: HTMLDivElement) {
-  if (textLayerDiv.querySelector(".endOfContent")) return;
-  const end = document.createElement("div");
-  end.className = "endOfContent";
+  if (textLayerDiv.querySelector('.endOfContent')) return;
+  const end = document.createElement('div');
+  end.className = 'endOfContent';
   textLayerDiv.appendChild(end);
 }
 function pageFromSelection(sel: Selection): number | null {
   const node = sel.anchorNode;
   const element = node instanceof Element ? node : node?.parentElement;
-  const pageEl = element?.closest<HTMLElement>("[data-page]");
+  const pageEl = element?.closest<HTMLElement>('[data-page]');
   const page = Number(pageEl?.dataset.page);
   return Number.isFinite(page) && page > 0 ? page : null;
 }
 
-function useSelectionReporter(side: "left" | "right") {
+function useSelectionReporter(side: 'left' | 'right') {
   return useCallback(
     (text: string, page: number) => {
-      if (side !== "left") return;
-      window.dispatchEvent(
-        new CustomEvent("pdf-selection", { detail: { text, page } })
-      );
+      if (side !== 'left') return;
+      window.dispatchEvent(new CustomEvent('pdf-selection', { detail: { text, page } }));
     },
-    [side]
+    [side],
   );
 }

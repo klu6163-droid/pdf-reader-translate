@@ -1,15 +1,9 @@
 // 「查看说明」弹窗：如何启动后端、端口、降级说明、常见问题。
 // 纯静态内容，给后端未连接的用户一个友好的引导。
 
-import { X, Terminal, Server, Lightbulb } from "lucide-react";
+import { X, Terminal, Server, Lightbulb } from 'lucide-react';
 
-export default function HelpModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+export default function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   return (
     <div
@@ -40,7 +34,9 @@ export default function HelpModal({
             <p className="leading-relaxed">
               AI 翻译、全文翻译与文献总结需要调用大模型，由一个运行在本机的 Python
               后端服务统一代理。软件启动时会自动检测它在
-              <code className="mx-1 px-1.5 py-0.5 bg-slate-100 rounded text-xs">127.0.0.1:8765</code>
+              <code className="mx-1 px-1.5 py-0.5 bg-slate-100 rounded text-xs">
+                127.0.0.1:8765
+              </code>
               是否可用。检测不到时，相关功能会暂时置灰。
             </p>
           </section>
@@ -50,11 +46,9 @@ export default function HelpModal({
               <Terminal size={15} className="text-primary-600" />
               如何手动启动
             </h3>
-            <p className="leading-relaxed">
-              在项目根目录打开终端，执行：
-            </p>
+            <p className="leading-relaxed">在项目根目录打开终端，执行：</p>
             <pre className="px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs overflow-x-auto">
-{`cd backend
+              {`cd backend
 python -m venv .venv
 # Windows
 .venv\\Scripts\\activate
@@ -78,7 +72,8 @@ python start.py`}
             <ul className="space-y-1.5 leading-relaxed list-disc pl-5 text-xs text-slate-600">
               <li>
                 全文翻译若提示「降级模式」，是因为后端未安装 pdf2zh，会退化为纯文本翻译；
-                需要保留排版/公式/图表时执行 <code className="px-1 bg-slate-100 rounded">pip install pdf2zh</code>。
+                需要保留排版/公式/图表时执行{' '}
+                <code className="px-1 bg-slate-100 rounded">pip install pdf2zh</code>。
               </li>
               <li>扫描件（图片型 PDF）无法提取文本，翻译与总结会提示无可用文本。</li>
               <li>首次使用请到右上角「设置」填入你自己的 API Key / Base URL / 模型名。</li>

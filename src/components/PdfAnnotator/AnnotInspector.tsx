@@ -1,7 +1,7 @@
 // 选中批注的编辑面板（左下角固定，非 note 类型使用；note 走 NoteBubble）
-import { Trash2, X } from "lucide-react";
-import { PALETTE, TYPE_LABELS } from "./constants";
-import type { PdfAnnotation } from "@/types";
+import { Trash2, X } from 'lucide-react';
+import { PALETTE, TYPE_LABELS } from './constants';
+import type { PdfAnnotation } from '@/types';
 
 interface Props {
   annot: PdfAnnotation;
@@ -18,7 +18,7 @@ export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Pr
         <span className="font-medium text-slate-700">
           {TYPE_LABELS[annot.type]} · 第 {annot.page + 1} 页
         </span>
-        {annot.source === "pdf" && (
+        {annot.source === 'pdf' && (
           <span className="text-[10px] px-1 py-0.5 bg-slate-100 text-slate-500 rounded">原有</span>
         )}
         <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600">
@@ -36,7 +36,7 @@ export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Pr
         value={annot.comment}
         onChange={(e) => onPatch({ comment: e.target.value })}
         placeholder="写点批注..."
-        autoFocus={annot.type === "note" && !annot.comment}
+        autoFocus={annot.type === 'note' && !annot.comment}
         className="w-full h-16 text-sm border rounded p-1.5 resize-none outline-none focus:border-primary-400"
       />
 
@@ -45,9 +45,9 @@ export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Pr
           <button
             key={c}
             onClick={() => onPatch({ color: c })}
-            disabled={annot.source === "pdf"}
+            disabled={annot.source === 'pdf'}
             className={`w-4 h-4 rounded-full border disabled:opacity-40 ${
-              annot.color === c ? "ring-2 ring-offset-1 ring-slate-400" : "border-slate-300"
+              annot.color === c ? 'ring-2 ring-offset-1 ring-slate-400' : 'border-slate-300'
             }`}
             style={{ background: c }}
           />

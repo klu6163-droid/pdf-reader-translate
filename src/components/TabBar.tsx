@@ -1,8 +1,8 @@
 // PDF 标签栏：每个标签对应一篇打开的 PDF，可切换 / 关闭 / 新增。
 
-import clsx from "clsx";
-import { FileText, Plus, X, Loader2 } from "lucide-react";
-import { useStore } from "@/store/useSettings";
+import clsx from 'clsx';
+import { FileText, Plus, X, Loader2 } from 'lucide-react';
+import { useStore } from '@/store/useSettings';
 
 const MAX_TABS = 8;
 
@@ -21,10 +21,10 @@ export default function TabBar({ onOpen }: { onOpen: () => void }) {
           onClick={() => setActiveTab(t.id)}
           title={t.name}
           className={clsx(
-            "group flex items-center gap-1.5 pl-3 pr-2 my-1 rounded text-sm cursor-pointer whitespace-nowrap border-t-2 transition-colors",
+            'group flex items-center gap-1.5 pl-3 pr-2 my-1 rounded text-sm cursor-pointer whitespace-nowrap border-t-2 transition-colors',
             t.id === activeTabId
-              ? "bg-white text-primary-600 border-primary-600 shadow-sm"
-              : "text-slate-500 hover:bg-slate-200/60 border-transparent"
+              ? 'bg-white text-primary-600 border-primary-600 shadow-sm'
+              : 'text-slate-500 hover:bg-slate-200/60 border-transparent',
           )}
         >
           <FileText size={13} className="shrink-0" />
@@ -48,7 +48,7 @@ export default function TabBar({ onOpen }: { onOpen: () => void }) {
       <button
         onClick={onOpen}
         disabled={atCap}
-        title={atCap ? `最多 ${MAX_TABS} 个标签页` : "打开 PDF"}
+        title={atCap ? `最多 ${MAX_TABS} 个标签页` : '打开 PDF'}
         className="flex items-center justify-center w-7 h-7 my-1 ml-1 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         <Plus size={16} />

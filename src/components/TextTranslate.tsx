@@ -2,15 +2,22 @@
 // 选中文本与译文存于当前标签页；loading 为组件本地态（仅活跃标签可见）。
 // 术语解释由前端直连 LLM 生成（不动后端），CORS 失败时降级提示。
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  Loader2, Languages, Copy, Check, Star, NotebookPen, RefreshCw, BookOpen,
-} from "lucide-react";
-import { translateText } from "@/services/api";
-import { explainTerms, TermsUnavailableError } from "@/services/llmDirect";
-import { useStore, useActiveTab } from "@/store/useSettings";
-import MarkdownLite from "./shared/MarkdownLite";
-import type { LLMSettings, SelectionInfo } from "@/types";
+  Loader2,
+  Languages,
+  Copy,
+  Check,
+  Star,
+  NotebookPen,
+  RefreshCw,
+  BookOpen,
+} from 'lucide-react';
+import { translateText } from '@/services/api';
+import { explainTerms, TermsUnavailableError } from '@/services/llmDirect';
+import { useStore, useActiveTab } from '@/store/useSettings';
+import MarkdownLite from './shared/MarkdownLite';
+import type { LLMSettings, SelectionInfo } from '@/types';
 
 export default function TextTranslate() {
   const tab = useActiveTab();
@@ -28,102 +35,96 @@ export default function TextTranslate() {
   const [copied, setCopied] = useState(false);
   const [noted, setNoted] = useState(false);
 
-  const doTranslate = useCallback(
-    async (text: string, targetId: string, page: number) => {
-      const s = useStore.getState();
-      if (s.backendStatus !== "online") {
-        s.updateTab(targetId, {
-          lastTranslateError: "后端未连接，划词翻译暂不可用。请先启动本地后端。",
-        });
-        return;
-      }
-      if (!s.hasSettings()) {
-        s.updateTab(targetId, {
-          lastTranslateError: "请先在「设置」中配置 API Key",
-        });
-        s.setSettingsOpen(true);
-        return;
-      }
-      // 取消上一个未完成的请求
-      abortRef.current?.abort();
-      termsAbortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
+  const doTranslate = useCallback(async (text: string, targetId: string, page: number) => {
+    const s = useStore.getState();
+    if (s.backendStatus !== 'online') {
       s.updateTab(targetId, {
-        lastSelection: { text, page },
-        lastTranslated: "",
-        lastTranslateError: "",
-        lastTerms: "",
-        lastTermsError: "",
+        lastTranslateError: '后端未连接，划词翻译暂不可用。请先启动本地后端。',
       });
-      setLoading(true);
+      return;
+    }
+    if (!s.hasSettings()) {
+      s.updateTab(targetId, {
+        lastTranslateError: '请先在「设置」中配置 API Key',
+      });
+      s.setSettingsOpen(true);
+      return;
+    }
+    // 取消上一个未完成的请求
+    abortRef.current?.abort();
+    termsAbortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-      let translated = "";
-      try {
-        const res = await translateText(text, s.settings, "中文", controller.signal);
-        // 若期间又发起了新请求，丢弃本次结果
-        if (abortRef.current !== controller) return;
-        translated = res.translated;
-        useStore.getState().updateTab(targetId, { lastTranslated: translated });
+    s.updateTab(targetId, {
+      lastSelection: { text, page },
+      lastTranslated: '',
+      lastTranslateError: '',
+      lastTerms: '',
+      lastTermsError: '',
+    });
+    setLoading(true);
 
-        // 写入翻译历史
-        const owner = useStore.getState().tabs.find((t) => t.id === targetId);
-        useStore.getState().addHistory({
-          original: text,
-          translated,
-          page,
-          tabName: owner?.name ?? "PDF",
-        });
+    let translated = '';
+    try {
+      const res = await translateText(text, s.settings, '中文', controller.signal);
+      // 若期间又发起了新请求，丢弃本次结果
+      if (abortRef.current !== controller) return;
+      translated = res.translated;
+      useStore.getState().updateTab(targetId, { lastTranslated: translated });
 
-        // 异步生成术语解释（前端直连 LLM）；失败仅标记，不影响主翻译
-        void fetchTerms(text, targetId, s.settings);
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        if (abortRef.current !== controller) return;
-        useStore.getState().updateTab(targetId, {
-          lastTranslateError: e instanceof Error ? e.message : "翻译失败",
-        });
-      } finally {
-        if (abortRef.current === controller) setLoading(false);
-      }
-    },
-    []
-  );
+      // 写入翻译历史
+      const owner = useStore.getState().tabs.find((t) => t.id === targetId);
+      useStore.getState().addHistory({
+        original: text,
+        translated,
+        page,
+        tabName: owner?.name ?? 'PDF',
+      });
+
+      // 异步生成术语解释（前端直连 LLM）；失败仅标记，不影响主翻译
+      void fetchTerms(text, targetId, s.settings);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (abortRef.current !== controller) return;
+      useStore.getState().updateTab(targetId, {
+        lastTranslateError: e instanceof Error ? e.message : '翻译失败',
+      });
+    } finally {
+      if (abortRef.current === controller) setLoading(false);
+    }
+  }, []);
 
   // 前端直连 LLM 生成术语解释
-  const fetchTerms = useCallback(
-    async (text: string, targetId: string, settings: LLMSettings) => {
-      if (!settings.apiKey) {
-        useStore.getState().updateTab(targetId, {
-          lastTermsError: "未配置 API Key，术语解释不可用",
-        });
-        return;
-      }
-      termsAbortRef.current?.abort();
-      const c = new AbortController();
-      termsAbortRef.current = c;
-      setTermsLoading(true);
-      try {
-        const terms = await explainTerms(text, settings, c.signal);
-        if (termsAbortRef.current !== c) return;
-        useStore.getState().updateTab(targetId, { lastTerms: terms, lastTermsError: "" });
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        if (termsAbortRef.current !== c) return;
-        const msg =
-          e instanceof TermsUnavailableError
+  const fetchTerms = useCallback(async (text: string, targetId: string, settings: LLMSettings) => {
+    if (!settings.apiKey) {
+      useStore.getState().updateTab(targetId, {
+        lastTermsError: '未配置 API Key，术语解释不可用',
+      });
+      return;
+    }
+    termsAbortRef.current?.abort();
+    const c = new AbortController();
+    termsAbortRef.current = c;
+    setTermsLoading(true);
+    try {
+      const terms = await explainTerms(text, settings, c.signal);
+      if (termsAbortRef.current !== c) return;
+      useStore.getState().updateTab(targetId, { lastTerms: terms, lastTermsError: '' });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (termsAbortRef.current !== c) return;
+      const msg =
+        e instanceof TermsUnavailableError
+          ? e.message
+          : e instanceof Error
             ? e.message
-            : e instanceof Error
-            ? e.message
-            : "术语解释失败";
-        useStore.getState().updateTab(targetId, { lastTermsError: msg });
-      } finally {
-        if (termsAbortRef.current === c) setTermsLoading(false);
-      }
-    },
-    []
-  );
+            : '术语解释失败';
+      useStore.getState().updateTab(targetId, { lastTermsError: msg });
+    } finally {
+      if (termsAbortRef.current === c) setTermsLoading(false);
+    }
+  }, []);
 
   // 切换标签时复位本地 loading（旧标签的请求仍在后台写入其自身状态）
   useEffect(() => {
@@ -144,20 +145,20 @@ export default function TextTranslate() {
       s.updateTab(current.id, { lastSelection: detail });
       doTranslate(detail.text, current.id, detail.page);
     };
-    window.addEventListener("pdf-selection", handler);
+    window.addEventListener('pdf-selection', handler);
     return () => {
-      window.removeEventListener("pdf-selection", handler);
+      window.removeEventListener('pdf-selection', handler);
       abortRef.current?.abort();
       termsAbortRef.current?.abort();
     };
   }, [doTranslate]);
 
   const selection = tab?.lastSelection ?? null;
-  const translated = tab?.lastTranslated ?? "";
-  const error = tab?.lastTranslateError ?? "";
-  const terms = tab?.lastTerms ?? "";
-  const termsError = tab?.lastTermsError ?? "";
-  const backendOnline = backendStatus === "online";
+  const translated = tab?.lastTranslated ?? '';
+  const error = tab?.lastTranslateError ?? '';
+  const terms = tab?.lastTerms ?? '';
+  const termsError = tab?.lastTermsError ?? '';
+  const backendOnline = backendStatus === 'online';
 
   const copyTranslated = async () => {
     if (!translated) return;
@@ -244,12 +245,10 @@ export default function TextTranslate() {
                   className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 text-slate-600"
                 >
                   {copied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-                  {copied ? "已复制" : "复制译文"}
+                  {copied ? '已复制' : '复制译文'}
                 </button>
                 <button
-                  onClick={() =>
-                    selection && doTranslate(selection.text, tab!.id, selection.page)
-                  }
+                  onClick={() => selection && doTranslate(selection.text, tab!.id, selection.page)}
                   disabled={loading}
                   className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 text-slate-600 disabled:opacity-50"
                 >
@@ -261,7 +260,7 @@ export default function TextTranslate() {
                   className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-amber-50 text-amber-600"
                 >
                   <Star size={13} />
-                  {noted ? "已收藏" : "收藏"}
+                  {noted ? '已收藏' : '收藏'}
                 </button>
                 <button
                   onClick={addToNotes}
@@ -306,4 +305,3 @@ export default function TextTranslate() {
     </div>
   );
 }
-

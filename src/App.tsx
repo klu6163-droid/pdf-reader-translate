@@ -1,27 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 import {
-  FileText, Settings as SettingsIcon, AlertTriangle, Upload, Type, Highlighter,
-  ChevronDown, Clock,
-} from "lucide-react";
-import { useStore } from "@/store/useSettings";
-import { checkBackend } from "@/services/api";
-import { readPdfFile, basename, listenDragDrop } from "@/services/pdf";
-import PDFViewer from "@/components/PDFViewer";
-import TranslationPanel from "@/components/TranslationPanel";
-import TabBar from "@/components/TabBar";
-import Settings from "@/components/Settings";
-import Splitter from "@/components/Splitter";
-import PdfEditor from "@/components/PdfEditor";
-import PdfAnnotator from "@/components/PdfAnnotator";
-import BackendStatusBanner from "@/components/BackendStatusBanner";
-import HelpModal from "@/components/HelpModal";
-import type { AnnotTool } from "@/types";
-import {
-  hasDirtyStash,
-  persistStash,
-  discardDirtyStash,
-} from "@/services/annotStash";
+  FileText,
+  Settings as SettingsIcon,
+  AlertTriangle,
+  Upload,
+  Type,
+  Highlighter,
+  ChevronDown,
+  Clock,
+} from 'lucide-react';
+import { useStore } from '@/store/useSettings';
+import { checkBackend } from '@/services/api';
+import { readPdfFile, basename, listenDragDrop } from '@/services/pdf';
+import PDFViewer from '@/components/PDFViewer';
+import TranslationPanel from '@/components/TranslationPanel';
+import TabBar from '@/components/TabBar';
+import Settings from '@/components/Settings';
+import Splitter from '@/components/Splitter';
+import PdfEditor from '@/components/PdfEditor';
+import PdfAnnotator from '@/components/PdfAnnotator';
+import BackendStatusBanner from '@/components/BackendStatusBanner';
+import HelpModal from '@/components/HelpModal';
+import type { AnnotTool } from '@/types';
+import { hasDirtyStash, persistStash, discardDirtyStash } from '@/services/annotStash';
 
 export default function App() {
   const tabs = useStore((s) => s.tabs);
@@ -38,14 +40,14 @@ export default function App() {
 
   // 拖放遮罩显隐 + 拖放错误提示
   const [dragOver, setDragOver] = useState(false);
-  const [dropError, setDropError] = useState("");
+  const [dropError, setDropError] = useState('');
   const recentDropRef = useRef<{ path: string; at: number } | null>(null);
 
   // PDF 编辑器 / 批注器浮层开关
   const [editorOpen, setEditorOpen] = useState(false);
   const [annotOpen, setAnnotOpen] = useState(false);
   // 打开批注器时预选的工具（来自顶栏「批注」或 PDFViewer 底部工具栏）
-  const [annotInitialTool, setAnnotInitialTool] = useState<AnnotTool>("select");
+  const [annotInitialTool, setAnnotInitialTool] = useState<AnnotTool>('select');
 
   // 「查看说明」弹窗
   const [helpOpen, setHelpOpen] = useState(false);
@@ -57,7 +59,7 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     (async () => {
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
         unlisten = await getCurrentWindow().onCloseRequested((event) => {
           if (hasDirtyStash()) {
             event.preventDefault();
@@ -69,8 +71,8 @@ export default function App() {
         const handler = () => {
           if (hasDirtyStash()) persistStash();
         };
-        window.addEventListener("beforeunload", handler);
-        unlisten = () => window.removeEventListener("beforeunload", handler);
+        window.addEventListener('beforeunload', handler);
+        unlisten = () => window.removeEventListener('beforeunload', handler);
       }
     })();
     return () => unlisten?.();
@@ -81,7 +83,7 @@ export default function App() {
     else discardDirtyStash();
     setExitAskOpen(false);
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       // destroy 跳过 CloseRequested，直接销毁（Rust 侧在 Destroyed 时清理后端）
       await getCurrentWindow().destroy();
     } catch {
@@ -95,16 +97,16 @@ export default function App() {
     const startedAt = Date.now();
     // 启动宽限期：25 秒内探测失败仍显示「启动中」而非「离线」
     const GRACE_MS = 25_000;
-    setBackendStatus("starting");
+    setBackendStatus('starting');
     const poll = async () => {
       const ok = await checkBackend();
       if (stopped) return;
       if (ok) {
-        setBackendStatus("online");
+        setBackendStatus('online');
         return;
       }
       const elapsed = Date.now() - startedAt;
-      setBackendStatus(elapsed < GRACE_MS ? "starting" : "offline");
+      setBackendStatus(elapsed < GRACE_MS ? 'starting' : 'offline');
     };
     poll();
     const timer = setInterval(poll, 3000);
@@ -116,9 +118,9 @@ export default function App() {
 
   // 「重新检测」：立即探测一次后端（用户在状态卡上点击）
   const recheckBackend = useCallback(async () => {
-    setBackendStatus("starting");
+    setBackendStatus('starting');
     const ok = await checkBackend();
-    setBackendStatus(ok ? "online" : "offline");
+    setBackendStatus(ok ? 'online' : 'offline');
   }, [setBackendStatus]);
 
   // 以指定工具打开批注器（顶栏「批注」传 select；阅读器底部按钮传对应工具）
@@ -142,12 +144,12 @@ export default function App() {
         const bytes = await readPdfFile(path);
         const id = addTab(bytes, basename(path));
         if (id) addRecentFile(path, basename(path));
-        setDropError(id ? "" : "最多同时打开 8 个标签页");
+        setDropError(id ? '' : '最多同时打开 8 个标签页');
       } catch (e) {
-        setDropError(e instanceof Error ? e.message : "打开 PDF 失败");
+        setDropError(e instanceof Error ? e.message : '打开 PDF 失败');
       }
     },
-    [addTab, addRecentFile]
+    [addTab, addRecentFile],
   );
 
   // 监听 Tauri 原生拖放
@@ -157,13 +159,13 @@ export default function App() {
       onEnter: () => setDragOver(true),
       onLeave: () => setDragOver(false),
       onDrop: (paths) => {
-        const pdfs = paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
+        const pdfs = paths.filter((p) => p.toLowerCase().endsWith('.pdf'));
         if (pdfs.length === 0) {
-          setDropError("请拖入 PDF 文件（未检测到 .pdf）");
+          setDropError('请拖入 PDF 文件（未检测到 .pdf）');
           return;
         }
         if (pdfs.length > 1) {
-          setDropError("检测到多个文件，仅打开第一个 PDF");
+          setDropError('检测到多个文件，仅打开第一个 PDF');
         }
         loadFromPath(pdfs[0]);
       },
@@ -176,22 +178,22 @@ export default function App() {
     try {
       const selected = await open({
         multiple: false,
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
       });
-      if (typeof selected === "string") {
+      if (typeof selected === 'string') {
         await loadFromPath(selected);
       }
     } catch {
       // 非 Tauri 环境（纯浏览器 dev）降级
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "application/pdf";
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/pdf';
       input.onchange = async () => {
         const file = input.files?.[0];
         if (file) {
           const buf = new Uint8Array(await file.arrayBuffer());
           const id = addTab(buf, file.name);
-          setDropError(id ? "" : "最多同时打开 8 个标签页");
+          setDropError(id ? '' : '最多同时打开 8 个标签页');
         }
       };
       input.click();
@@ -219,19 +221,12 @@ export default function App() {
             <FileText size={16} />
             打开 PDF
           </button>
-          <RecentFilesMenu
-            files={recentFiles}
-            onOpen={loadFromPath}
-          />
+          <RecentFilesMenu files={recentFiles} onOpen={loadFromPath} />
           {activeTab && (
             <button
               onClick={() => setEditorOpen(true)}
-              disabled={backendStatus !== "online"}
-              title={
-                backendStatus === "online"
-                  ? "编辑当前 PDF 的文本块"
-                  : "需先连接后端才能编辑"
-              }
+              disabled={backendStatus !== 'online'}
+              title={backendStatus === 'online' ? '编辑当前 PDF 的文本块' : '需先连接后端才能编辑'}
               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-primary-600 text-primary-700 rounded hover:bg-primary-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Type size={16} />
@@ -240,12 +235,12 @@ export default function App() {
           )}
           {activeTab && (
             <button
-              onClick={() => openAnnotWith("select")}
-              disabled={backendStatus !== "online"}
+              onClick={() => openAnnotWith('select')}
+              disabled={backendStatus !== 'online'}
               title={
-                backendStatus === "online"
-                  ? "为当前 PDF 添加批注（高亮/下划线/便签/画笔）"
-                  : "需先连接后端才能批注"
+                backendStatus === 'online'
+                  ? '为当前 PDF 添加批注（高亮/下划线/便签/画笔）'
+                  : '需先连接后端才能批注'
               }
               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-amber-500 text-amber-600 rounded hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -276,17 +271,12 @@ export default function App() {
       />
 
       {/* 拖放错误提示条（自动 3 秒消失） */}
-      {dropError && (
-        <DropErrorBanner message={dropError} onDismiss={() => setDropError("")} />
-      )}
+      {dropError && <DropErrorBanner message={dropError} onDismiss={() => setDropError('')} />}
 
       {/* 主体：左右分栏（可拖拽调整比例） */}
       <div className="flex flex-1 min-h-0">
         {/* 左侧原始 PDF（按标签 key 重建，保证每篇独立 PDF.js 实例） */}
-        <div
-          className="bg-slate-200 min-w-0 shrink-0"
-          style={{ width: `${splitRatio * 100}%` }}
-        >
+        <div className="bg-slate-200 min-w-0 shrink-0" style={{ width: `${splitRatio * 100}%` }}>
           {activeTab ? (
             <PDFViewer
               key={activeTab.id}
@@ -340,8 +330,7 @@ export default function App() {
           <div className="w-96 bg-white rounded-lg shadow-xl p-5 space-y-4">
             <h3 className="font-semibold text-slate-800">保留批注？</h3>
             <p className="text-sm text-slate-600">
-              本次会话中有批注改动尚未写入 PDF。是否保留这些批注，
-              以便下次打开软件继续编辑？
+              本次会话中有批注改动尚未写入 PDF。是否保留这些批注， 以便下次打开软件继续编辑？
             </p>
             <p className="text-xs text-slate-400">
               保留：下次打开同一 PDF 的批注时自动恢复。不保留：仅丢弃本次改动。
@@ -388,11 +377,11 @@ function RecentFilesMenu({
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement)?.closest("[data-recent-menu]");
+      const el = (e.target as HTMLElement)?.closest('[data-recent-menu]');
       if (!el) setOpen(false);
     };
-    window.addEventListener("mousedown", handler);
-    return () => window.removeEventListener("mousedown", handler);
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
   }, [open]);
 
   return (
@@ -400,7 +389,7 @@ function RecentFilesMenu({
       <button
         onClick={() => setOpen((v) => !v)}
         disabled={files.length === 0}
-        title={files.length === 0 ? "暂无最近文件" : "最近打开的文件"}
+        title={files.length === 0 ? '暂无最近文件' : '最近打开的文件'}
         className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         <Clock size={16} />
@@ -420,9 +409,7 @@ function RecentFilesMenu({
               title={f.path}
             >
               <FileText size={14} className="shrink-0 text-slate-400" />
-              <span className="flex-1 truncate text-sm text-slate-700">
-                {f.name}
-              </span>
+              <span className="flex-1 truncate text-sm text-slate-700">{f.name}</span>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -460,12 +447,8 @@ function EmptyHint({ onOpen }: { onOpen: () => void }) {
           <FileText size={32} className="text-primary-500" strokeWidth={1.5} />
         </div>
         <div>
-          <p className="text-base font-medium text-slate-800">
-            打开一篇 PDF 开始阅读
-          </p>
-          <p className="text-sm text-slate-500 mt-1">
-            支持拖拽 PDF 到这里，或选择本地 PDF 文件。
-          </p>
+          <p className="text-base font-medium text-slate-800">打开一篇 PDF 开始阅读</p>
+          <p className="text-sm text-slate-500 mt-1">支持拖拽 PDF 到这里，或选择本地 PDF 文件。</p>
         </div>
         <button
           onClick={onOpen}
@@ -480,13 +463,7 @@ function EmptyHint({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-function DropErrorBanner({
-  message,
-  onDismiss,
-}: {
-  message: string;
-  onDismiss: () => void;
-}) {
+function DropErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   // 3 秒后自动消失
   useEffect(() => {
     const t = setTimeout(onDismiss, 3000);
@@ -497,7 +474,9 @@ function DropErrorBanner({
     <div className="flex items-center gap-2 px-4 py-2 text-sm bg-red-50 text-red-600 border-b border-red-200 shrink-0">
       <AlertTriangle size={16} className="shrink-0" />
       <span className="flex-1">{message}</span>
-      <button onClick={onDismiss} className="text-red-400 hover:text-red-600 ml-2">✕</button>
+      <button onClick={onDismiss} className="text-red-400 hover:text-red-600 ml-2">
+        ✕
+      </button>
     </div>
   );
 }

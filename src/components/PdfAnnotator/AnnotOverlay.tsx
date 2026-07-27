@@ -1,6 +1,6 @@
 // 批注在页面上的视觉呈现（高亮 / 下划线 / 删除线 / 矩形 / 画笔 / 便签图标）
-import { StickyNote } from "lucide-react";
-import type { PdfAnnotation } from "@/types";
+import { StickyNote } from 'lucide-react';
+import type { PdfAnnotation } from '@/types';
 
 interface Props {
   a: PdfAnnotation;
@@ -13,28 +13,28 @@ interface Props {
 
 export default function AnnotOverlay({ a, scale, selected, flash, interactive, onSelect }: Props) {
   const common: React.CSSProperties = {
-    pointerEvents: interactive ? "auto" : "none",
-    cursor: interactive ? "pointer" : undefined,
+    pointerEvents: interactive ? 'auto' : 'none',
+    cursor: interactive ? 'pointer' : undefined,
   };
   const ring = selected
-    ? "0 0 0 2px rgba(59,130,246,.85)"
+    ? '0 0 0 2px rgba(59,130,246,.85)'
     : flash
-    ? "0 0 0 3px rgba(59,130,246,.6)"
-    : undefined;
+      ? '0 0 0 3px rgba(59,130,246,.6)'
+      : undefined;
 
-  if ((a.type === "highlight" || a.type === "underline" || a.type === "strikeout") && a.quads) {
+  if ((a.type === 'highlight' || a.type === 'underline' || a.type === 'strikeout') && a.quads) {
     return (
       <>
         {a.quads.map((q, i) => {
           const [x0, y0, x1, y1] = q;
           const base: React.CSSProperties = {
             ...common,
-            position: "absolute",
+            position: 'absolute',
             left: x0 * scale,
             width: (x1 - x0) * scale,
             boxShadow: ring,
           };
-          if (a.type === "highlight") {
+          if (a.type === 'highlight') {
             return (
               <div
                 key={i}
@@ -45,13 +45,13 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
                   height: (y1 - y0) * scale,
                   background: a.color,
                   opacity: 0.38,
-                  mixBlendMode: "multiply",
+                  mixBlendMode: 'multiply',
                 }}
               />
             );
           }
           const lineTop =
-            a.type === "underline" ? y1 * scale - 2 : (y0 + (y1 - y0) / 2) * scale - 1;
+            a.type === 'underline' ? y1 * scale - 2 : (y0 + (y1 - y0) / 2) * scale - 1;
           return (
             <div
               key={i}
@@ -69,14 +69,14 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
     );
   }
 
-  if (a.type === "rectangle" && a.rect) {
+  if (a.type === 'rectangle' && a.rect) {
     const [x0, y0, x1, y1] = a.rect;
     return (
       <div
         onClick={onSelect}
         style={{
           ...common,
-          position: "absolute",
+          position: 'absolute',
           left: x0 * scale,
           top: y0 * scale,
           width: (x1 - x0) * scale,
@@ -88,30 +88,30 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
     );
   }
 
-  if (a.type === "ink" && a.ink) {
+  if (a.type === 'ink' && a.ink) {
     return (
       <svg
         className="absolute inset-0"
-        style={{ ...common, width: "100%", height: "100%", overflow: "visible" }}
+        style={{ ...common, width: '100%', height: '100%', overflow: 'visible' }}
         onClick={onSelect}
       >
         {a.ink.map((stroke, i) => (
           <polyline
             key={i}
-            points={stroke.map(([x, y]) => `${x * scale},${y * scale}`).join(" ")}
+            points={stroke.map(([x, y]) => `${x * scale},${y * scale}`).join(' ')}
             fill="none"
             stroke={a.color}
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ filter: ring ? "drop-shadow(0 0 2px rgba(59,130,246,.9))" : undefined }}
+            style={{ filter: ring ? 'drop-shadow(0 0 2px rgba(59,130,246,.9))' : undefined }}
           />
         ))}
       </svg>
     );
   }
 
-  if (a.type === "note" && a.rect) {
+  if (a.type === 'note' && a.rect) {
     const [x0, y0] = a.rect;
     return (
       <div
@@ -119,9 +119,9 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
         title={a.comment}
         style={{
           ...common,
-          pointerEvents: "auto", // 便签始终可点（不挡文字选择：面积小）
-          cursor: "pointer",
-          position: "absolute",
+          pointerEvents: 'auto', // 便签始终可点（不挡文字选择：面积小）
+          cursor: 'pointer',
+          position: 'absolute',
           left: x0 * scale,
           top: y0 * scale,
           boxShadow: ring,

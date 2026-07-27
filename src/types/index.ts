@@ -20,7 +20,7 @@ export interface PdfProgressEvent {
   error?: boolean;
 }
 
-export type PanelTab = "text" | "full" | "summary" | "overlay";
+export type PanelTab = 'text' | 'full' | 'summary' | 'overlay';
 
 // 划词事件：选中的文本 + 所在页码
 export interface SelectionInfo {
@@ -81,7 +81,7 @@ export interface EditPage {
 
 export interface AnalyzeResult {
   edit_id: string;
-  mode: "text" | "compatible";
+  mode: 'text' | 'compatible';
   mode_label: string;
   page_count: number;
   pages: EditPage[];
@@ -89,16 +89,10 @@ export interface AnalyzeResult {
 
 // ---- PDF 批注 ----
 
-export type AnnotationType =
-  | "highlight"
-  | "underline"
-  | "strikeout"
-  | "note"
-  | "rectangle"
-  | "ink";
+export type AnnotationType = 'highlight' | 'underline' | 'strikeout' | 'note' | 'rectangle' | 'ink';
 
 // 批注工具：选择 + 各类批注。PDFViewer 底部工具栏与 PdfAnnotator 共用。
-export type AnnotTool = "select" | AnnotationType;
+export type AnnotTool = 'select' | AnnotationType;
 
 // 单条批注（前后端一致；坐标为 PDF 点，左上原点）
 export interface PdfAnnotation {
@@ -113,7 +107,7 @@ export interface PdfAnnotation {
   ink?: [number, number][][] | null; // 画笔笔迹（每笔一条点列）
   created_at?: string;
   updated_at?: string;
-  source?: "user" | "pdf"; // pdf = 从原 PDF 导入的已有批注
+  source?: 'user' | 'pdf'; // pdf = 从原 PDF 导入的已有批注
   xref?: number | null;
 }
 
@@ -151,7 +145,7 @@ export interface EditOp {
 export interface SaveEditsResult {
   ok: boolean;
   edit_id: string;
-  mode: "text" | "compatible";
+  mode: 'text' | 'compatible';
   mode_label: string;
   edited: number;
   message: string;

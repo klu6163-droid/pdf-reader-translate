@@ -4,13 +4,13 @@
 // 注意：OpenAI 官方域名不支持浏览器 CORS，中转/兼容地址通常支持。
 // 连接失败时抛 TermsUnavailableError，UI 据此降级为提示，不影响翻译/总结（仍走后端）。
 
-import type { LLMSettings } from "@/types";
+import type { LLMSettings } from '@/types';
 
 /** 术语解释不可用时抛出（CORS / 网络错误 / 接口非兼容）。 */
 export class TermsUnavailableError extends Error {
-  constructor(message = "术语解释暂不可用（接口可能不支持浏览器跨域调用）") {
+  constructor(message = '术语解释暂不可用（接口可能不支持浏览器跨域调用）') {
     super(message);
-    this.name = "TermsUnavailableError";
+    this.name = 'TermsUnavailableError';
   }
 }
 
@@ -24,19 +24,19 @@ const SYSTEM_PROMPT = `你是一名专业术语词典助手。给定一段（可
 export async function explainTerms(
   text: string,
   settings: LLMSettings,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!settings.apiKey || !settings.baseUrl) {
-    throw new TermsUnavailableError("请先在「设置」中配置 API Key 与 Base URL");
+    throw new TermsUnavailableError('请先在「设置」中配置 API Key 与 Base URL');
   }
-  const url = `${settings.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const url = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   let resp: Response;
   try {
     resp = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${settings.apiKey}`,
       },
       body: JSON.stringify({
@@ -44,14 +44,14 @@ export async function explainTerms(
         temperature: 0.2,
         stream: false,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: text.slice(0, 4000) },
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: text.slice(0, 4000) },
         ],
       }),
       signal,
     });
   } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
     // 几乎都是 CORS / 网络不通
     throw new TermsUnavailableError();
   }
@@ -72,11 +72,11 @@ export async function explainTerms(
   try {
     data = await resp.json();
   } catch {
-    throw new TermsUnavailableError("术语解释响应解析失败");
+    throw new TermsUnavailableError('术语解释响应解析失败');
   }
   const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) {
-    throw new TermsUnavailableError("术语解释返回为空");
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new TermsUnavailableError('术语解释返回为空');
   }
   return content.trim();
 }

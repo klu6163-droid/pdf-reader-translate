@@ -1,7 +1,7 @@
 // 笔记就地输入气泡（跟随落点显示，越界翻转）
-import { StickyNote, Trash2, X } from "lucide-react";
-import { PALETTE } from "./constants";
-import type { PdfAnnotation } from "@/types";
+import { StickyNote, Trash2, X } from 'lucide-react';
+import { PALETTE } from './constants';
+import type { PdfAnnotation } from '@/types';
 
 interface Props {
   annot: PdfAnnotation;
@@ -13,7 +13,15 @@ interface Props {
   onClose: () => void;
 }
 
-export default function NoteBubble({ annot, scale, pageW, pageH, onPatch, onRemove, onClose }: Props) {
+export default function NoteBubble({
+  annot,
+  scale,
+  pageW,
+  pageH,
+  onPatch,
+  onRemove,
+  onClose,
+}: Props) {
   const [x0, y0] = annot.rect!;
   const BUBBLE_W = 240;
   const BUBBLE_H = 150;
@@ -39,7 +47,7 @@ export default function NoteBubble({ annot, scale, pageW, pageH, onPatch, onRemo
       <div className="flex items-center gap-1.5 text-xs text-slate-500">
         <StickyNote size={13} style={{ color: annot.color }} />
         <span>笔记 · 第 {annot.page + 1} 页</span>
-        {annot.source === "pdf" && (
+        {annot.source === 'pdf' && (
           <span className="text-[10px] px-1 bg-slate-100 text-slate-400 rounded">原有</span>
         )}
         <button
@@ -55,7 +63,7 @@ export default function NoteBubble({ annot, scale, pageW, pageH, onPatch, onRemo
         value={annot.comment}
         onChange={(e) => onPatch({ comment: e.target.value })}
         onKeyDown={(e) => {
-          if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
+          if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
             e.preventDefault();
             emptyOnCloseRemoves();
           }
@@ -69,7 +77,7 @@ export default function NoteBubble({ annot, scale, pageW, pageH, onPatch, onRemo
             key={c}
             onClick={() => onPatch({ color: c })}
             className={`w-3.5 h-3.5 rounded-full border ${
-              annot.color === c ? "ring-2 ring-offset-1 ring-slate-400" : "border-slate-300"
+              annot.color === c ? 'ring-2 ring-offset-1 ring-slate-400' : 'border-slate-300'
             }`}
             style={{ background: c }}
           />

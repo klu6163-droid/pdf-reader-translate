@@ -4,16 +4,16 @@
 // - offline：黄色卡片，说明 AI 功能暂不可用，提供「重新检测 / 查看说明」
 // - unknown：灰色「检测中…」
 
-import { AlertTriangle, CheckCircle2, Loader2, RotateCw, HelpCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, RotateCw, HelpCircle } from 'lucide-react';
 
 interface Props {
-  status: "unknown" | "starting" | "online" | "offline";
+  status: 'unknown' | 'starting' | 'online' | 'offline';
   onRecheck: () => void;
   onShowHelp: () => void;
 }
 
 export default function BackendStatusBanner({ status, onRecheck, onShowHelp }: Props) {
-  if (status === "online") {
+  if (status === 'online') {
     return (
       <div className="flex items-center gap-2 px-4 py-2 text-sm bg-green-50 text-green-700 border-b border-green-200 shrink-0">
         <CheckCircle2 size={16} className="shrink-0" />
@@ -22,18 +22,16 @@ export default function BackendStatusBanner({ status, onRecheck, onShowHelp }: P
     );
   }
 
-  if (status === "starting") {
+  if (status === 'starting') {
     return (
       <div className="flex items-center gap-2 px-4 py-2 text-sm bg-sky-50 text-sky-700 border-b border-sky-200 shrink-0">
         <Loader2 size={16} className="shrink-0 animate-spin" />
-        <span>
-          后端服务启动中，首次启动约 10-20 秒（解压翻译引擎），请稍候…
-        </span>
+        <span>后端服务启动中，首次启动约 10-20 秒（解压翻译引擎），请稍候…</span>
       </div>
     );
   }
 
-  if (status === "unknown") {
+  if (status === 'unknown') {
     return (
       <div className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-50 text-slate-500 border-b border-slate-200 shrink-0">
         <Loader2 size={16} className="shrink-0 animate-spin" />
@@ -45,20 +43,15 @@ export default function BackendStatusBanner({ status, onRecheck, onShowHelp }: P
   return <OfflineCard onRecheck={onRecheck} onShowHelp={onShowHelp} />;
 }
 
-function OfflineCard({
-  onRecheck,
-  onShowHelp,
-}: {
-  onRecheck: () => void;
-  onShowHelp: () => void;
-}) {
+function OfflineCard({ onRecheck, onShowHelp }: { onRecheck: () => void; onShowHelp: () => void }) {
   return (
     <div className="flex items-start gap-3 px-4 py-3 text-sm bg-amber-50 text-amber-800 border-b border-amber-200 shrink-0">
       <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-500" />
       <div className="flex-1 min-w-0">
         <p className="font-medium">后端服务未连接</p>
         <p className="text-amber-700 mt-0.5">
-          AI 翻译、全文翻译和文献总结暂不可用。首次启动最多需要 20 秒，请稍候再点击「重新检测」；若仍未恢复，可能是被杀毒软件拦截或端口 8765 被占用。
+          AI 翻译、全文翻译和文献总结暂不可用。首次启动最多需要 20
+          秒，请稍候再点击「重新检测」；若仍未恢复，可能是被杀毒软件拦截或端口 8765 被占用。
         </p>
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <button

@@ -2,17 +2,24 @@
 // 数据来自 store（持久化）。折叠时仅占一行状态条，展开后最高 ~18rem 内部滚动。
 // 历史条目可「回填」到当前标签的划词翻译；笔记条目可删除。
 
-import { useEffect, useState } from "react";
-import clsx from "clsx";
+import { useEffect, useState } from 'react';
+import clsx from 'clsx';
 import {
-  History, Star, ChevronDown, ChevronUp, Trash2, CornerUpLeft, Copy, Inbox,
-} from "lucide-react";
-import { useStore, useActiveTab } from "@/store/useSettings";
-import type { HistoryItem, NoteItem } from "@/types";
+  History,
+  Star,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+  CornerUpLeft,
+  Copy,
+  Inbox,
+} from 'lucide-react';
+import { useStore, useActiveTab } from '@/store/useSettings';
+import type { HistoryItem, NoteItem } from '@/types';
 
 export default function HistoryNotes() {
   const [open, setOpen] = useState(false);
-  const [sub, setSub] = useState<"history" | "notes">("history");
+  const [sub, setSub] = useState<'history' | 'notes'>('history');
 
   const history = useStore((s) => s.history);
   const notes = useStore((s) => s.notes);
@@ -24,7 +31,7 @@ export default function HistoryNotes() {
   useEffect(() => {
     if (notesFlash > 0) {
       setOpen(true);
-      setSub("notes");
+      setSub('notes');
     }
   }, [notesFlash]);
 
@@ -42,7 +49,7 @@ export default function HistoryNotes() {
           <Star size={13} /> 笔记 {notes.length}
         </span>
         <span className="ml-auto flex items-center gap-1">
-          {open ? "收起" : "展开"}
+          {open ? '收起' : '展开'}
           {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </span>
       </button>
@@ -52,20 +59,20 @@ export default function HistoryNotes() {
           {/* 子标签 */}
           <div className="flex items-center px-3 gap-1 border-b bg-white">
             <SubTab
-              active={sub === "history"}
-              onClick={() => setSub("history")}
+              active={sub === 'history'}
+              onClick={() => setSub('history')}
               icon={<History size={13} />}
               label="最近翻译"
               count={history.length}
             />
             <SubTab
-              active={sub === "notes"}
-              onClick={() => setSub("notes")}
+              active={sub === 'notes'}
+              onClick={() => setSub('notes')}
               icon={<Star size={13} />}
               label="收藏笔记"
               count={notes.length}
             />
-            {sub === "history" && history.length > 0 && (
+            {sub === 'history' && history.length > 0 && (
               <button
                 onClick={clearHistory}
                 className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-red-500"
@@ -73,7 +80,7 @@ export default function HistoryNotes() {
                 <Trash2 size={12} /> 清空
               </button>
             )}
-            {sub === "notes" && notes.length > 0 && (
+            {sub === 'notes' && notes.length > 0 && (
               <button
                 onClick={clearNotes}
                 className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-red-500"
@@ -85,13 +92,11 @@ export default function HistoryNotes() {
 
           {/* 列表 */}
           <div className="flex-1 overflow-auto p-2 space-y-1.5">
-            {sub === "history" ? (
+            {sub === 'history' ? (
               history.length === 0 ? (
                 <Empty text="还没有翻译历史" />
               ) : (
-                history.map((h) => (
-                  <HistoryRow key={h.id} item={h} />
-                ))
+                history.map((h) => <HistoryRow key={h.id} item={h} />)
               )
             ) : notes.length === 0 ? (
               <Empty text="还没有收藏的笔记" />
@@ -122,10 +127,10 @@ function SubTab({
     <button
       onClick={onClick}
       className={clsx(
-        "flex items-center gap-1 px-2.5 py-2 text-xs border-b-2 transition-colors",
+        'flex items-center gap-1 px-2.5 py-2 text-xs border-b-2 transition-colors',
         active
-          ? "border-primary-600 text-primary-600 font-medium"
-          : "border-transparent text-slate-500 hover:text-slate-700"
+          ? 'border-primary-600 text-primary-600 font-medium'
+          : 'border-transparent text-slate-500 hover:text-slate-700',
       )}
     >
       {icon}
@@ -153,7 +158,7 @@ function HistoryRow({ item }: { item: HistoryItem }) {
     updateTab(activeTab.id, {
       lastSelection: { text: item.original, page: item.page },
       lastTranslated: item.translated,
-      lastTranslateError: "",
+      lastTranslateError: '',
     });
   };
 

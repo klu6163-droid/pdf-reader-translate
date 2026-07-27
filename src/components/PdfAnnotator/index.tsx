@@ -17,24 +17,31 @@
 //
 // 坐标：fitz 与 pdf.js 都是左上原点、单位点(pt)：PDF 坐标 × scale = 像素。
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import { AlertCircle, Info, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+import { AlertCircle, Info, Loader2 } from 'lucide-react';
 import {
-  openPdfAnnot, addPdfAnnot, updatePdfAnnot, deletePdfAnnot,
-  savePdfAnnots, annotatedPdfBytes, exportPdfAnnots, bytesToPdfBlob, errMsg,
-} from "@/services/api";
-import { savePdfFile } from "@/services/pdf";
-import { docKey, getStash, setStash } from "@/services/annotStash";
-import type { AnnotPageInfo, AnnotTool, PdfAnnotation } from "@/types";
-import { PALETTE, TEXT_TOOLS, newId, type Tool } from "./constants";
-import AnnotToolbar from "./Toolbar";
-import AnnotPage from "./AnnotPage";
-import AnnotList from "./AnnotList";
-import AnnotInspector from "./AnnotInspector";
+  openPdfAnnot,
+  addPdfAnnot,
+  updatePdfAnnot,
+  deletePdfAnnot,
+  savePdfAnnots,
+  annotatedPdfBytes,
+  exportPdfAnnots,
+  bytesToPdfBlob,
+  errMsg,
+} from '@/services/api';
+import { savePdfFile } from '@/services/pdf';
+import { docKey, getStash, setStash } from '@/services/annotStash';
+import type { AnnotPageInfo, AnnotTool, PdfAnnotation } from '@/types';
+import { PALETTE, TEXT_TOOLS, newId, type Tool } from './constants';
+import AnnotToolbar from './Toolbar';
+import AnnotPage from './AnnotPage';
+import AnnotList from './AnnotList';
+import AnnotInspector from './AnnotInspector';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
 
@@ -50,17 +57,17 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
   const [annotId, setAnnotId] = useState<string | null>(null);
   const [pages, setPages] = useState<AnnotPageInfo[]>([]);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
-  const [tool, setTool] = useState<Tool>(initialTool ?? "select");
+  const [tool, setTool] = useState<Tool>(initialTool ?? 'select');
   const [color, setColor] = useState(PALETTE[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [noteEditId, setNoteEditId] = useState<string | null>(null); // 就地编辑中的笔记
   const [flashId, setFlashId] = useState<string | null>(null);
   const [scale, setScale] = useState(1.3);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [banner, setBanner] = useState<{ kind: "info" | "ok" | "warn"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{ kind: 'info' | 'ok' | 'warn'; text: string } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -89,7 +96,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
           savePdfAnnots(res.annot_id, stashed).catch(() => {});
           if (stashed.length > 0) {
             setBanner({
-              kind: "info",
+              kind: 'info',
               text: `已恢复上次的 ${stashed.length} 条批注（未保存到 PDF，记得保存）`,
             });
           }
@@ -97,7 +104,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
           setAnnotations(res.annotations);
           if (res.annotations.length > 0) {
             setBanner({
-              kind: "info",
+              kind: 'info',
               text: `已导入该 PDF 中原有的 ${res.annotations.length} 条批注（列表中标为「原有」）`,
             });
           }
@@ -152,16 +159,16 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       const a: PdfAnnotation = {
         id: newId(),
         page: 0,
-        type: "highlight",
-        text: "",
-        comment: "",
+        type: 'highlight',
+        text: '',
+        comment: '',
         color,
         rect: null,
         quads: null,
         ink: null,
         created_at: now,
         updated_at: now,
-        source: "user",
+        source: 'user',
         xref: null,
         ...partial,
       };
@@ -228,12 +235,12 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       // 去重（textLayer 偶尔给出重复矩形）
       const seen = new Set<string>();
       const unique = quads.filter((q) => {
-        const k = q.map((v) => Math.round(v)).join(",");
+        const k = q.map((v) => Math.round(v)).join(',');
         if (seen.has(k)) return false;
         seen.add(k);
         return true;
       });
-      createAnnot({ page: pno, type: tool as Exclude<Tool, "select">, text, quads: unique });
+      createAnnot({ page: pno, type: tool as Exclude<Tool, 'select'>, text, quads: unique });
     });
     sel.removeAllRanges();
   }, [tool, scale, createAnnot]);
@@ -245,8 +252,8 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
     setNoteEditId(null);
     if (TEXT_TOOLS.includes(t) && hasTextRef.current === false) {
       setBanner({
-        kind: "warn",
-        text: "该 PDF 暂不支持文本选择，可以使用矩形框或画笔批注。",
+        kind: 'warn',
+        text: '该 PDF 暂不支持文本选择，可以使用矩形框或画笔批注。',
       });
     }
   }, []);
@@ -266,9 +273,9 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       const y = a.rect?.[1] ?? a.quads?.[0]?.[1] ?? a.ink?.[0]?.[0]?.[1] ?? 0;
       container.scrollTo({
         top: el.offsetTop + y * scale - 120,
-        behavior: "smooth",
+        behavior: 'smooth',
       });
-      if (a.type === "note") {
+      if (a.type === 'note') {
         openNoteEditor(a.id);
       } else {
         setNoteEditId(null);
@@ -283,11 +290,11 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
   // ---- 保存（404 时自动重开会话重试一次）----
   const handleSave = useCallback(async () => {
     if (annotations.length === 0) {
-      setBanner({ kind: "info", text: "尚无批注。先添加批注再保存。" });
+      setBanner({ kind: 'info', text: '尚无批注。先添加批注再保存。' });
       return;
     }
     setSaving(true);
-    setBanner({ kind: "info", text: "正在把批注写入 PDF..." });
+    setBanner({ kind: 'info', text: '正在把批注写入 PDF...' });
     try {
       let id = annotId;
       const doSave = async (sid: string) => {
@@ -297,7 +304,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       };
       let result;
       try {
-        if (!id) throw new Error("会话未建立");
+        if (!id) throw new Error('会话未建立');
         result = await doSave(id);
       } catch (e) {
         // 会话失效（后端重启/清理）→ 重开会话再试一次
@@ -308,14 +315,14 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
         setAnnotId(id);
         result = await doSave(id);
       }
-      const outName = name.replace(/\.pdf$/i, "") + "-annotated.pdf";
+      const outName = name.replace(/\.pdf$/i, '') + '-annotated.pdf';
       const savedPath = await savePdfFile(result.bytes, outName);
       setBanner({
-        kind: "ok",
+        kind: 'ok',
         text: savedPath ? result.res.message : `${result.res.message}（已取消另存）`,
       });
     } catch (e) {
-      setBanner({ kind: "warn", text: `批注保存失败，请重试：${errMsg(e)}` });
+      setBanner({ kind: 'warn', text: `批注保存失败，请重试：${errMsg(e)}` });
     } finally {
       setSaving(false);
     }
@@ -323,16 +330,16 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
 
   // ---- 导出 ----
   const handleExport = useCallback(
-    async (fmt: "json" | "markdown") => {
+    async (fmt: 'json' | 'markdown') => {
       if (!annotId) return;
       try {
         // 先把当前列表推给后端（导出以会话为准）
         await savePdfAnnots(annotId, annotations).catch(() => {});
         const content = await exportPdfAnnots(annotId, fmt);
         await navigator.clipboard.writeText(content);
-        setBanner({ kind: "ok", text: `批注已导出为 ${fmt.toUpperCase()} 并复制到剪贴板` });
+        setBanner({ kind: 'ok', text: `批注已导出为 ${fmt.toUpperCase()} 并复制到剪贴板` });
       } catch (e) {
-        setBanner({ kind: "warn", text: `导出失败：${errMsg(e)}` });
+        setBanner({ kind: 'warn', text: `导出失败：${errMsg(e)}` });
       }
     },
     [annotId, annotations],
@@ -362,11 +369,11 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       {banner && (
         <div
           className={`flex items-center gap-2 px-4 py-1.5 text-sm shrink-0 ${
-            banner.kind === "ok"
-              ? "bg-green-50 text-green-700 border-b border-green-200"
-              : banner.kind === "warn"
-                ? "bg-amber-50 text-amber-700 border-b border-amber-200"
-                : "bg-sky-50 text-sky-700 border-b border-sky-200"
+            banner.kind === 'ok'
+              ? 'bg-green-50 text-green-700 border-b border-green-200'
+              : banner.kind === 'warn'
+                ? 'bg-amber-50 text-amber-700 border-b border-amber-200'
+                : 'bg-sky-50 text-sky-700 border-b border-sky-200'
           }`}
         >
           <Info size={14} className="shrink-0" />
@@ -449,7 +456,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       </div>
 
       {/* 选中批注的编辑面板（笔记类型走页面内就地气泡，不在这里） */}
-      {selected && selected.type !== "note" && (
+      {selected && selected.type !== 'note' && (
         <AnnotInspector
           annot={selected}
           onPatch={(p) => patchAnnot(selected.id, p)}

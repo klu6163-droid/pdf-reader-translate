@@ -2,9 +2,9 @@
 // 配置持久化到 localStorage（不写死在代码里，用户自行填写）。
 // PDF 数据不落盘（体积过大）。
 
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import type { LLMSettings, PdfTab, RecentFile, HistoryItem, NoteItem } from "@/types";
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { LLMSettings, PdfTab, RecentFile, HistoryItem, NoteItem } from '@/types';
 
 const MAX_TABS = 8;
 const MAX_RECENT = 12;
@@ -36,11 +36,11 @@ interface AppState {
 
   // 划词翻译历史 & 收藏笔记（持久化，纯文本，体积小）
   history: HistoryItem[];
-  addHistory: (item: Omit<HistoryItem, "id" | "ts">) => void;
+  addHistory: (item: Omit<HistoryItem, 'id' | 'ts'>) => void;
   clearHistory: () => void;
 
   notes: NoteItem[];
-  addNote: (item: Omit<NoteItem, "id" | "ts">) => void;
+  addNote: (item: Omit<NoteItem, 'id' | 'ts'>) => void;
   removeNote: (id: string) => void;
   clearNotes: () => void;
 
@@ -52,8 +52,8 @@ interface AppState {
   setSettingsOpen: (v: boolean) => void;
 
   // 后端连接状态：unknown（未探测过）/ starting（首次启动等待中）/ online / offline
-  backendStatus: "unknown" | "starting" | "online" | "offline";
-  setBackendStatus: (s: "unknown" | "starting" | "online" | "offline") => void;
+  backendStatus: 'unknown' | 'starting' | 'online' | 'offline';
+  setBackendStatus: (s: 'unknown' | 'starting' | 'online' | 'offline') => void;
 
   // 左右分栏比例（左栏占比，0.2~0.8，默认 0.5）
   splitRatio: number;
@@ -65,9 +65,9 @@ interface AppState {
 }
 
 const DEFAULT_SETTINGS: LLMSettings = {
-  apiKey: "",
-  baseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
 };
 
 function createTab(data: Uint8Array, name: string): PdfTab {
@@ -79,24 +79,24 @@ function createTab(data: Uint8Array, name: string): PdfTab {
     translationTaskId: null,
     translationRunning: false,
     translationProgress: 0,
-    translationMessage: "",
-    translationMode: "",
+    translationMessage: '',
+    translationMode: '',
     translatedPdfUrl: null,
-    translationError: "",
-    summaryContent: "",
+    translationError: '',
+    summaryContent: '',
     summaryRunning: false,
-    summaryError: "",
+    summaryError: '',
     lastSelection: null,
-    lastTranslated: "",
-    lastTranslateError: "",
-    lastTerms: "",
-    lastTermsError: "",
+    lastTranslated: '',
+    lastTranslateError: '',
+    lastTerms: '',
+    lastTermsError: '',
     overlayTaskId: null,
     overlayRunning: false,
     overlayProgress: 0,
-    overlayMessage: "",
+    overlayMessage: '',
     overlayPdfUrl: null,
-    overlayError: "",
+    overlayError: '',
   };
 }
 
@@ -104,8 +104,7 @@ export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
       settings: DEFAULT_SETTINGS,
-      setSettings: (s) =>
-        set((state) => ({ settings: { ...state.settings, ...s } })),
+      setSettings: (s) => set((state) => ({ settings: { ...state.settings, ...s } })),
       hasSettings: () => !!get().settings.apiKey,
 
       tabs: [],
@@ -132,14 +131,12 @@ export const useStore = create<AppState>()(
       setActiveTab: (id) => set({ activeTabId: id }),
       updateTab: (id, patch) =>
         set((state) => ({
-          tabs: state.tabs.map((t) =>
-            t.id === id ? { ...t, ...patch } : t
-          ),
+          tabs: state.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
         })),
       appendSummary: (id, delta) =>
         set((state) => ({
           tabs: state.tabs.map((t) =>
-            t.id === id ? { ...t, summaryContent: t.summaryContent + delta } : t
+            t.id === id ? { ...t, summaryContent: t.summaryContent + delta } : t,
           ),
         })),
 
@@ -191,7 +188,7 @@ export const useStore = create<AppState>()(
       settingsOpen: false,
       setSettingsOpen: (v) => set({ settingsOpen: v }),
 
-      backendStatus: "unknown",
+      backendStatus: 'unknown',
       setBackendStatus: (s) => set({ backendStatus: s }),
 
       splitRatio: 0.5,
@@ -201,7 +198,7 @@ export const useStore = create<AppState>()(
       setSyncTranslatedPage: (v) => set({ syncTranslatedPage: v }),
     }),
     {
-      name: "pdf-translate-settings",
+      name: 'pdf-translate-settings',
       // 持久化 settings + 分栏比例 + 最近文件/历史/笔记（均纯文本，体积小）；
       // PDF 字节不落盘
       partialize: (state) => ({
@@ -212,8 +209,8 @@ export const useStore = create<AppState>()(
         history: state.history,
         notes: state.notes,
       }),
-    }
-  )
+    },
+  ),
 );
 
 /** 读取当前激活的标签页。无标签时返回 null。 */

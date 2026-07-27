@@ -1,10 +1,21 @@
 // 顶部工具栏：工具切换 / 颜色 / 缩放 / 列表开关 / 保存 / 关闭
 import {
-  Highlighter, Loader2, Minus, MousePointer2, Pen, Plus, Save,
-  Square, StickyNote, Strikethrough, Underline, X, List,
-} from "lucide-react";
-import ToolBtn from "../shared/ToolBtn";
-import { PALETTE, type Tool } from "./constants";
+  Highlighter,
+  Loader2,
+  Minus,
+  MousePointer2,
+  Pen,
+  Plus,
+  Save,
+  Square,
+  StickyNote,
+  Strikethrough,
+  Underline,
+  X,
+  List,
+} from 'lucide-react';
+import ToolBtn from '../shared/ToolBtn';
+import { PALETTE, type Tool } from './constants';
 
 interface Props {
   name: string;
@@ -45,20 +56,55 @@ export default function AnnotToolbar({
 
       {/* 工具 */}
       <div className="flex items-center gap-0.5 ml-2 pl-2 border-l">
-        <ToolBtn variant="annotator" icon={<MousePointer2 size={15} />} label="选择"
-          active={tool === "select"} onClick={() => onPickTool("select")} />
-        <ToolBtn variant="annotator" icon={<Highlighter size={15} />} label="高亮"
-          active={tool === "highlight"} onClick={() => onPickTool("highlight")} />
-        <ToolBtn variant="annotator" icon={<Underline size={15} />} label="下划线"
-          active={tool === "underline"} onClick={() => onPickTool("underline")} />
-        <ToolBtn variant="annotator" icon={<Strikethrough size={15} />} label="删除线"
-          active={tool === "strikeout"} onClick={() => onPickTool("strikeout")} />
-        <ToolBtn variant="annotator" icon={<StickyNote size={15} />} label="笔记"
-          active={tool === "note"} onClick={() => onPickTool("note")} />
-        <ToolBtn variant="annotator" icon={<Square size={15} />} label="矩形"
-          active={tool === "rectangle"} onClick={() => onPickTool("rectangle")} />
-        <ToolBtn variant="annotator" icon={<Pen size={15} />} label="画笔"
-          active={tool === "ink"} onClick={() => onPickTool("ink")} />
+        <ToolBtn
+          variant="annotator"
+          icon={<MousePointer2 size={15} />}
+          label="选择"
+          active={tool === 'select'}
+          onClick={() => onPickTool('select')}
+        />
+        <ToolBtn
+          variant="annotator"
+          icon={<Highlighter size={15} />}
+          label="高亮"
+          active={tool === 'highlight'}
+          onClick={() => onPickTool('highlight')}
+        />
+        <ToolBtn
+          variant="annotator"
+          icon={<Underline size={15} />}
+          label="下划线"
+          active={tool === 'underline'}
+          onClick={() => onPickTool('underline')}
+        />
+        <ToolBtn
+          variant="annotator"
+          icon={<Strikethrough size={15} />}
+          label="删除线"
+          active={tool === 'strikeout'}
+          onClick={() => onPickTool('strikeout')}
+        />
+        <ToolBtn
+          variant="annotator"
+          icon={<StickyNote size={15} />}
+          label="笔记"
+          active={tool === 'note'}
+          onClick={() => onPickTool('note')}
+        />
+        <ToolBtn
+          variant="annotator"
+          icon={<Square size={15} />}
+          label="矩形"
+          active={tool === 'rectangle'}
+          onClick={() => onPickTool('rectangle')}
+        />
+        <ToolBtn
+          variant="annotator"
+          icon={<Pen size={15} />}
+          label="画笔"
+          active={tool === 'ink'}
+          onClick={() => onPickTool('ink')}
+        />
       </div>
 
       {/* 颜色 */}
@@ -68,7 +114,7 @@ export default function AnnotToolbar({
             key={c}
             onClick={() => onColor(c)}
             className={`w-4.5 h-4.5 w-[18px] h-[18px] rounded-full border ${
-              color === c ? "ring-2 ring-offset-1 ring-slate-500" : "border-slate-300"
+              color === c ? 'ring-2 ring-offset-1 ring-slate-500' : 'border-slate-300'
             }`}
             style={{ background: c }}
             title={c}
@@ -80,7 +126,7 @@ export default function AnnotToolbar({
         >
           <span
             className="absolute inset-0"
-            style={{ background: "conic-gradient(red,yellow,lime,cyan,blue,magenta,red)" }}
+            style={{ background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)' }}
           />
           <input
             type="color"
@@ -114,7 +160,7 @@ export default function AnnotToolbar({
         <button
           onClick={onToggleSidebar}
           className={`p-1.5 rounded ${
-            sidebarOpen ? "bg-primary-50 text-primary-700" : "hover:bg-slate-100 text-slate-600"
+            sidebarOpen ? 'bg-primary-50 text-primary-700' : 'hover:bg-slate-100 text-slate-600'
           }`}
           title="批注列表"
         >

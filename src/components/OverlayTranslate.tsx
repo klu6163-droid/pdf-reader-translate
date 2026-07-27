@@ -2,26 +2,22 @@
 // 适合 pdf2zh 效果不理想时改用。流程与全文翻译一致：上传 → SSE 进度 → 右侧译文 PDF。
 // 核心任务生命周期由 useTranslateTask 统一管理。
 
-import { Loader2, Play, AlertCircle, Type, Highlighter } from "lucide-react";
-import {
-  startOverlayTrans,
-  subscribeOverlayProgress,
-  overlayResultUrl,
-} from "@/services/api";
-import { useStore, useActiveTab } from "@/store/useSettings";
-import { useTranslateTask } from "@/hooks/useTranslateTask";
-import type { TranslateTaskConfig } from "@/hooks/useTranslateTask";
-import PDFViewer from "./PDFViewer";
-import PdfEditor from "./PdfEditor";
-import PdfAnnotator from "./PdfAnnotator";
+import { Loader2, Play, AlertCircle, Type, Highlighter } from 'lucide-react';
+import { startOverlayTrans, subscribeOverlayProgress, overlayResultUrl } from '@/services/api';
+import { useStore, useActiveTab } from '@/store/useSettings';
+import { useTranslateTask } from '@/hooks/useTranslateTask';
+import type { TranslateTaskConfig } from '@/hooks/useTranslateTask';
+import PDFViewer from './PDFViewer';
+import PdfEditor from './PdfEditor';
+import PdfAnnotator from './PdfAnnotator';
 
 const CONFIG: TranslateTaskConfig = {
-  taskIdField: "overlayTaskId",
-  runningField: "overlayRunning",
-  progressField: "overlayProgress",
-  messageField: "overlayMessage",
-  resultUrlField: "overlayPdfUrl",
-  errorField: "overlayError",
+  taskIdField: 'overlayTaskId',
+  runningField: 'overlayRunning',
+  progressField: 'overlayProgress',
+  messageField: 'overlayMessage',
+  resultUrlField: 'overlayPdfUrl',
+  errorField: 'overlayError',
   startApi: startOverlayTrans,
   subscribeApi: subscribeOverlayProgress,
   resultUrlApi: overlayResultUrl,
@@ -31,20 +27,27 @@ export default function OverlayTranslate() {
   const tab = useActiveTab();
   const updateTab = useStore((s) => s.updateTab);
   const backendStatus = useStore((s) => s.backendStatus);
-  const backendOnline = backendStatus === "online";
+  const backendOnline = backendStatus === 'online';
   const syncTranslatedPage = useStore((s) => s.syncTranslatedPage);
   const setSyncTranslatedPage = useStore((s) => s.setSyncTranslatedPage);
 
   const [task, actions] = useTranslateTask(CONFIG);
   const { running, progress, message, resultUrl, error } = task;
-  const { start, openTranslatedOverlay, overlay, closeOverlay, editorLoading, editorError, clearEditorError } = actions;
+  const {
+    start,
+    openTranslatedOverlay,
+    overlay,
+    closeOverlay,
+    editorLoading,
+    editorError,
+    clearEditorError,
+  } = actions;
 
   const hasPdf = !!tab?.pdfData;
 
   // 已有结果：显示翻译后的 PDF
   if (resultUrl && tab) {
-    const zhName =
-      (tab.name || "translated.pdf").replace(/\.pdf$/i, "") + "-zh.pdf";
+    const zhName = (tab.name || 'translated.pdf').replace(/\.pdf$/i, '') + '-zh.pdf';
     return (
       <div className="flex flex-col h-full">
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs bg-green-50 text-green-700 border-b shrink-0">
@@ -62,20 +65,16 @@ export default function OverlayTranslate() {
           </label>
           译文 PDF 已生成（跳过 pdf2zh，原位覆盖文本、保留 figure）
           <button
-            onClick={() => openTranslatedOverlay(resultUrl, "edit")}
+            onClick={() => openTranslatedOverlay(resultUrl, 'edit')}
             disabled={editorLoading}
             className="ml-auto flex items-center gap-1 text-primary-700 hover:text-primary-900 disabled:opacity-50"
             title="编辑译文 PDF 的文本块"
           >
-            {editorLoading ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <Type size={12} />
-            )}
+            {editorLoading ? <Loader2 size={12} className="animate-spin" /> : <Type size={12} />}
             编辑译文
           </button>
           <button
-            onClick={() => openTranslatedOverlay(resultUrl, "annot")}
+            onClick={() => openTranslatedOverlay(resultUrl, 'annot')}
             disabled={editorLoading}
             className="flex items-center gap-1 text-amber-600 hover:text-amber-800 disabled:opacity-50"
             title="为译文 PDF 添加批注"
@@ -87,7 +86,7 @@ export default function OverlayTranslate() {
               updateTab(tab.id, {
                 overlayPdfUrl: null,
                 overlayProgress: 0,
-                overlayMessage: "",
+                overlayMessage: '',
               })
             }
             className="text-slate-500 hover:text-slate-700"
@@ -115,19 +114,11 @@ export default function OverlayTranslate() {
         </div>
 
         {/* 译文 PDF 编辑/批注器（全屏浮层） */}
-        {overlay?.kind === "edit" && (
-          <PdfEditor
-            data={overlay.data}
-            name={zhName}
-            onClose={closeOverlay}
-          />
+        {overlay?.kind === 'edit' && (
+          <PdfEditor data={overlay.data} name={zhName} onClose={closeOverlay} />
         )}
-        {overlay?.kind === "annot" && (
-          <PdfAnnotator
-            data={overlay.data}
-            name={zhName}
-            onClose={closeOverlay}
-          />
+        {overlay?.kind === 'annot' && (
+          <PdfAnnotator data={overlay.data} name={zhName} onClose={closeOverlay} />
         )}
       </div>
     );
@@ -136,9 +127,8 @@ export default function OverlayTranslate() {
   return (
     <div className="flex flex-col h-full p-4 gap-4">
       <div className="text-sm text-slate-600">
-        生成译文 PDF：跳过 pdf2zh，用 PyMuPDF 提取文本块 → LLM 翻译 →
-        原位覆盖（保留 figure/页面图像，只覆盖文本）。适合 pdf2zh
-        效果不理想时改用。
+        生成译文 PDF：跳过 pdf2zh，用 PyMuPDF 提取文本块 → LLM 翻译 → 原位覆盖（保留
+        figure/页面图像，只覆盖文本）。适合 pdf2zh 效果不理想时改用。
       </div>
 
       <button
@@ -146,12 +136,8 @@ export default function OverlayTranslate() {
         disabled={running || !hasPdf || !backendOnline}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
       >
-        {running ? (
-          <Loader2 className="animate-spin" size={18} />
-        ) : (
-          <Play size={18} />
-        )}
-        {running ? "生成中..." : "生成译文 PDF"}
+        {running ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} />}
+        {running ? '生成中...' : '生成译文 PDF'}
       </button>
 
       {!backendOnline && (
@@ -184,9 +170,7 @@ export default function OverlayTranslate() {
       )}
 
       {!hasPdf && (
-        <div className="text-sm text-slate-400 text-center mt-4">
-          请先在左侧打开一个 PDF
-        </div>
+        <div className="text-sm text-slate-400 text-center mt-4">请先在左侧打开一个 PDF</div>
       )}
     </div>
   );

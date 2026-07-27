@@ -1,10 +1,10 @@
 // 单页渲染：pdf.js canvas + textLayer + 批注覆盖层 + 绘制捕获层
-import { useEffect, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import { r2, type Tool } from "./constants";
-import AnnotOverlay from "./AnnotOverlay";
-import NoteBubble from "./NoteBubble";
-import type { AnnotPageInfo, PdfAnnotation } from "@/types";
+import { useEffect, useRef, useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+import { r2, type Tool } from './constants';
+import AnnotOverlay from './AnnotOverlay';
+import NoteBubble from './NoteBubble';
+import type { AnnotPageInfo, PdfAnnotation } from '@/types';
 
 interface Props {
   pdfDoc: pdfjsLib.PDFDocumentProxy | null;
@@ -53,8 +53,8 @@ export default function AnnotPage({
 
   // 拖拽矩形 / 画笔中间态（CSS px）
   const [draft, setDraft] = useState<
-    | { kind: "rect"; x0: number; y0: number; x1: number; y1: number }
-    | { kind: "ink"; points: [number, number][] }
+    | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number }
+    | { kind: 'ink'; points: [number, number][] }
     | null
   >(null);
 
@@ -66,7 +66,7 @@ export default function AnnotPage({
     if (!el) return;
     const io = new IntersectionObserver(
       (es) => es.forEach((en) => en.isIntersecting && setVisible(true)),
-      { rootMargin: "700px 0px" },
+      { rootMargin: '700px 0px' },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -85,7 +85,7 @@ export default function AnnotPage({
         if (!canvas || !textLayerDiv) return;
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
         await page.render({
           canvasContext: ctx,
@@ -100,15 +100,15 @@ export default function AnnotPage({
           const textContent = await page.getTextContent();
           reportHasText((textContent.items?.length ?? 0) > 0);
           textLayerDiv.replaceChildren();
-          textLayerDiv.style.setProperty("--scale-factor", String(viewport.scale));
+          textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
           const lib = pdfjsLib as any;
-          if (typeof lib.TextLayer === "function") {
+          if (typeof lib.TextLayer === 'function') {
             await new lib.TextLayer({
               textContentSource: textContent,
               container: textLayerDiv,
               viewport,
             }).render();
-          } else if (typeof lib.renderTextLayer === "function") {
+          } else if (typeof lib.renderTextLayer === 'function') {
             await lib.renderTextLayer({
               textContentSource: textContent,
               container: textLayerDiv,
@@ -134,13 +134,13 @@ export default function AnnotPage({
   };
 
   const onCapturePointerDown = (e: React.PointerEvent) => {
-    if (tool === "note") {
+    if (tool === 'note') {
       const [x, y] = toLocal(e);
       const px = x / scale;
       const py = y / scale;
       const a = onCreate({
         page: info.page,
-        type: "note",
+        type: 'note',
         color,
         rect: [r2(px), r2(py), r2(px + 18), r2(py + 18)],
       });
@@ -149,20 +149,20 @@ export default function AnnotPage({
     }
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const [x, y] = toLocal(e);
-    if (tool === "rectangle") setDraft({ kind: "rect", x0: x, y0: y, x1: x, y1: y });
-    else if (tool === "ink") setDraft({ kind: "ink", points: [[x, y]] });
+    if (tool === 'rectangle') setDraft({ kind: 'rect', x0: x, y0: y, x1: x, y1: y });
+    else if (tool === 'ink') setDraft({ kind: 'ink', points: [[x, y]] });
   };
 
   const onCapturePointerMove = (e: React.PointerEvent) => {
     if (!draft) return;
     const [x, y] = toLocal(e);
-    if (draft.kind === "rect") setDraft({ ...draft, x1: x, y1: y });
-    else setDraft({ kind: "ink", points: [...draft.points, [x, y]] });
+    if (draft.kind === 'rect') setDraft({ ...draft, x1: x, y1: y });
+    else setDraft({ kind: 'ink', points: [...draft.points, [x, y]] });
   };
 
   const onCapturePointerUp = () => {
     if (!draft) return;
-    if (draft.kind === "rect") {
+    if (draft.kind === 'rect') {
       const x0 = Math.min(draft.x0, draft.x1) / scale;
       const y0 = Math.min(draft.y0, draft.y1) / scale;
       const x1 = Math.max(draft.x0, draft.x1) / scale;
@@ -170,22 +170,22 @@ export default function AnnotPage({
       if (x1 - x0 >= 4 && y1 - y0 >= 4) {
         onCreate({
           page: info.page,
-          type: "rectangle",
+          type: 'rectangle',
           color,
           rect: [r2(x0), r2(y0), r2(x1), r2(y1)],
         });
       }
-    } else if (draft.kind === "ink" && draft.points.length >= 2) {
+    } else if (draft.kind === 'ink' && draft.points.length >= 2) {
       const stroke = draft.points.map(
         ([x, y]) => [r2(x / scale), r2(y / scale)] as [number, number],
       );
-      onCreate({ page: info.page, type: "ink", color, ink: [stroke] });
+      onCreate({ page: info.page, type: 'ink', color, ink: [stroke] });
     }
     setDraft(null);
   };
 
-  const captureActive = tool === "note" || tool === "rectangle" || tool === "ink";
-  const overlayInteractive = tool === "select";
+  const captureActive = tool === 'note' || tool === 'rectangle' || tool === 'ink';
+  const overlayInteractive = tool === 'select';
 
   return (
     <div
@@ -212,13 +212,13 @@ export default function AnnotPage({
           selected={selectedId === a.id || noteEditId === a.id}
           flash={flashId === a.id}
           interactive={overlayInteractive}
-          onSelect={() => (a.type === "note" ? onOpenNote(a.id) : onSelect(a.id))}
+          onSelect={() => (a.type === 'note' ? onOpenNote(a.id) : onSelect(a.id))}
         />
       ))}
 
       {/* 笔记就地输入气泡（跟随落点） */}
       {(() => {
-        const editing = annotations.find((a) => a.id === noteEditId && a.type === "note");
+        const editing = annotations.find((a) => a.id === noteEditId && a.type === 'note');
         if (!editing?.rect) return null;
         return (
           <NoteBubble
@@ -241,7 +241,7 @@ export default function AnnotPage({
       {captureActive && (
         <div
           className="absolute inset-0 z-20"
-          style={{ cursor: tool === "note" ? "copy" : "crosshair", touchAction: "none" }}
+          style={{ cursor: tool === 'note' ? 'copy' : 'crosshair', touchAction: 'none' }}
           onPointerDown={onCapturePointerDown}
           onPointerMove={onCapturePointerMove}
           onPointerUp={onCapturePointerUp}
@@ -249,7 +249,7 @@ export default function AnnotPage({
       )}
 
       {/* 拖拽中的预览 */}
-      {draft?.kind === "rect" && (
+      {draft?.kind === 'rect' && (
         <div
           className="absolute z-10 pointer-events-none"
           style={{
@@ -262,10 +262,10 @@ export default function AnnotPage({
           }}
         />
       )}
-      {draft?.kind === "ink" && (
+      {draft?.kind === 'ink' && (
         <svg className="absolute inset-0 z-10 pointer-events-none" width={w} height={h}>
           <polyline
-            points={draft.points.map((p) => p.join(",")).join(" ")}
+            points={draft.points.map((p) => p.join(',')).join(' ')}
             fill="none"
             stroke={color}
             strokeWidth={2}

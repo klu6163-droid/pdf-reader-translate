@@ -1,10 +1,10 @@
 // 设置弹窗：配置 API Key / Base URL / 模型名，并可测试连通性。
 // API Key 只存在本地 localStorage，不写死、不上传第三方。
 
-import { useState } from "react";
-import { X, Loader2, CheckCircle, XCircle } from "lucide-react";
-import { useStore } from "@/store/useSettings";
-import { testSettings } from "@/services/api";
+import { useState } from 'react';
+import { X, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { useStore } from '@/store/useSettings';
+import { testSettings } from '@/services/api';
 
 export default function Settings() {
   const { settings, setSettings, settingsOpen, setSettingsOpen } = useStore();
@@ -77,14 +77,10 @@ export default function Settings() {
           {testResult && (
             <div
               className={`flex items-center gap-2 text-sm ${
-                testResult.ok ? "text-green-600" : "text-red-600"
+                testResult.ok ? 'text-green-600' : 'text-red-600'
               }`}
             >
-              {testResult.ok ? (
-                <CheckCircle size={16} />
-              ) : (
-                <XCircle size={16} />
-              )}
+              {testResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
               <span className="break-all">{testResult.message}</span>
             </div>
           )}
