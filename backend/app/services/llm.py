@@ -66,9 +66,14 @@ class LLMService:
                 raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
             data = resp.json()
             try:
-                return data["choices"][0]["message"]["content"]
-            except (KeyError, IndexError) as e:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as e:
                 raise LLMError(f"LLM 响应格式异常: {e}")
+            # content 为 null 是合法响应（如内容审查拒答），不能原样返回
+            # ——下游按 str 校验会 500，必须转成可读错误
+            if content is None:
+                raise LLMError("LLM 返回了空内容（可能是内容审查拒答或模型异常），请重试或更换模型")
+            return content
 
     async def chat_stream(
         self,
@@ -104,7 +109,9 @@ class LLMService:
                         delta = obj["choices"][0]["delta"].get("content")
                         if delta:
                             yield delta
-                    except (json.JSONDecodeError, KeyError, IndexError):
+                    except Exception:  # noqa: BLE001
+                        # 非标端点的畸形行（delta 为 null、choices 非列表等）
+                        # 一律跳过该行，不能因一行坏数据掐断整个流
                         continue
 
     # -------- 高层业务方法 --------

@@ -280,7 +280,12 @@ def apply_edits(pdf_path: str, edits: list[dict[str, Any]], out_path: str) -> di
                 if e.get("deleted"):
                     edited += 1
                     continue
-                text = e.get("text", info["text"])
+                # 注意：EditOp.model_dump() 恒带 text 键（未改文字时为 None），
+                # 不能用 e.get("text", info["text"]) 兜底——那会把 None 当新文本，
+                # 在 redaction 移除原文后把字面 "None" 写进 PDF。只有显式 None 才回退原文。
+                text = e.get("text")
+                if text is None:
+                    text = info["text"]
                 if not str(text):
                     edited += 1
                     continue

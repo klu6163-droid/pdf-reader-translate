@@ -38,10 +38,17 @@ export class TimeoutError extends Error {
 async function apiFetch(path: string, init: RequestInit = {}, timeoutSec = 60): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  // 调用方 signal 与超时 controller 必须同时生效：把调用方取消转发到
+  // 内部 controller（不用 AbortSignal.any——tsconfig lib 为 ES2020，缺类型声明）。
+  // 旧写法 `init.signal ?? controller.signal` 会让超时在调用方传 signal 时失效。
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort();
+    else init.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
   try {
     return await fetch(`${BASE}${path}`, {
       ...init,
-      signal: init.signal ?? controller.signal,
+      signal: controller.signal,
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {

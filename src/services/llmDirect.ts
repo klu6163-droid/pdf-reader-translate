@@ -31,6 +31,16 @@ export async function explainTerms(
   }
   const url = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
+  // 90s 超时（与 translateText 一致），避免端点挂起时术语区永久转圈。
+  // 不用 AbortSignal.any（tsconfig lib 为 ES2020，缺少其类型声明），
+  // 改为手动转发：调用方 signal 与超时共用一个内部 controller。
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
   let resp: Response;
   try {
     resp = await fetch(url, {
@@ -48,12 +58,14 @@ export async function explainTerms(
           { role: 'user', content: text.slice(0, 4000) },
         ],
       }),
-      signal,
+      signal: controller.signal,
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     // 几乎都是 CORS / 网络不通
     throw new TermsUnavailableError();
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!resp.ok) {

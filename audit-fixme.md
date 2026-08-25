@@ -1,0 +1,160 @@
+# pdf-translate 审计修复清单
+
+> 来源：全量代码审计（6 并行查找代理 → 逐条人工复核 → 关键结论实测验证，PyMuPDF 1.25.2 / Pydantic 2.9.2）
+> 原始 47 条发现，复核后确认 34 条（致命 1 / 隐患 22 / 代码味道 11），假阳性已剔除（见文末）。
+
+## 使用规则（对修复 agent 生效）
+
+1. 按批次顺序修复，**一次只修一个批次**，修完更新本文件勾选状态后由用户 commit
+2. 不引入新依赖，不改公开 API 和配置项
+3. 标注「需运行时验证」的条目：先写出复现/验证思路，用户确认后再动手
+4. 批次 3 为架构性改动：先给方案（现状 → 方案取舍 → 影响面），用户逐条确认后再写代码
+5. 每批完成后：后端跑 pytest，前端跑 tsc；用户做主流程冒烟（打开 PDF → 划词翻译 → 移动文本块 → 保存）
+
+---
+
+## 批次 1：致命 + 一行级高确定性修复（9 条）
+
+- [x] **1.1【致命】`backend/app/services/pdf_edit_service.py:283`**
+  `text = e.get("text", info["text"])`：pydantic `model_dump()` 总带 `text: None` 键（已实测），`.get` 拿到 `None`，`str(None)="None"` 为真值，redaction 物理移除原文后把字面字符串 `"None"` 写进 PDF。
+  触发：编辑器只移动/缩放/改色任一文本块（不动文字）→ 保存。
+  修复：`text = e.get("text") or info["text"]`，或显式 `if text is None: text = info["text"]`。
+  **必须补回归测试**：模拟只移动文本块（text=None）的 EditOp，断言输出 PDF 不出现字面 "None"（此文件当前无测试覆盖）。
+
+- [x] **1.2 `backend/app/services/fonts.py:92-102`**
+  `@lru_cache` 缓存 None：启动时没找到字体，用户之后装好字体也永远找不到。
+  修复：只缓存成功结果，失败不缓存（自维护缓存）。
+
+- [x] **1.3 `backend/app/services/llm.py:69`**
+  `message.content` 为 null（内容审查拒答等合法响应）未处理 → 返回 None → 响应模型校验失败 500。
+  修复：`content or ""` 并给出可读错误。
+
+- [x] **1.4 `backend/app/services/llm.py:107-108`**
+  畸形 SSE 行的 except 只列 `JSONDecodeError/KeyError/IndexError`，漏 `TypeError/AttributeError`（如 delta 为 null），非标端点一行异常结构就掐断整个总结流。
+  修复：补 `TypeError, AttributeError`，或直接 `except Exception`。
+
+- [x] **1.5 `src/components/HistoryNotes.tsx:156-163`**
+  历史回填只写 lastSelection/lastTranslated，不清 lastTerms/lastTermsError → 旧术语解释错配给回填译文。
+  修复：回填时同时清空术语字段。
+
+- [x] **1.6 `src/services/llmDirect.ts:36-52`**
+  术语解释直连 LLM 无超时控制 → 端点挂起时术语区永久转圈。
+  修复：加 AbortController + 定时中止（90s，与 translateText 一致）。
+
+- [x] **1.7 `src/services/api.ts:42-44`**
+  调用方传 signal 时 fetch 用调用方信号，超时定时器的 controller.signal 根本没接上——translateText 的 90s 超时是死代码。
+  修复：`AbortSignal.any([init.signal, controller.signal])`；如需兼容性降级方案先说明。
+
+- [x] **1.8 `backend/app/services/file_utils.py:22-27`**
+  先补 `.pdf` 后缀再 `[:180]` 截断：超长文件名（>176 字符）会截掉扩展名。
+  修复：截断主体、保留后缀。
+
+- [x] **1.9 `src/store/useSettings.ts:204-211`**
+  notes 持久化无上限（history 有 50 上限），长期收藏缓慢挤占 localStorage 直至写入失败。
+  修复：与 history 一样限额。
+
+---
+
+## 批次 2：行为变更类（12 条，改完人工过一遍交互）
+
+- [ ] **2.1 `src/services/api.ts:260-262`（配合 `Summary.tsx:39`）**
+  streamSummary 的 `reader.read()` 循环无 try/catch；流中途断开时 Promise reject 无人捕获 → summaryRunning 永久卡在「生成中」。
+  修复：循环包 try/catch → onError；Summary.tsx 里 await 外加 catch 兜底。
+
+- [ ] **2.2 `src/services/api.ts:163-167`**
+  SSE onerror 立即 close() 并判失败，无重连；长翻译期间一次瞬时抖动（休眠/唤醒）→ 前端永久显示「进度连接中断」。
+  修复：利用后端已有的 last_event 重放能力做指数退避重订阅。
+
+- [ ] **2.3 `src/services/pdf.ts:30-48`**
+  savePdfFile 用一个 catch 把「用户取消/非 Tauri」与真实写盘失败混为一谈：写盘失败静默降级为无效的浏览器下载，用户以为是自己取消，编辑成果无声丢失。
+  修复：区分错误来源，invoke 失败抛给调用方显示真实原因，仅「非 Tauri」才降级。
+
+- [ ] **2.4 `src/components/TextTranslate.tsx:53-54`**
+  全局单实例共享 abortRef，跨标签划词互相取消，被取消方静默停在空白态。
+  修复：按标签 id 存放控制器，或至少给被取消方写「已被新请求取消」状态。
+
+- [ ] **2.5 `src/components/PdfEditor.tsx:149-156`、`src/components/PdfAnnotator/index.tsx:300-319`**
+  保存快照取自闭包；保存请求 await 期间继续编辑的内容不进产物，但提示保存成功。
+  修复：保存期间禁用编辑（现有 saving 态只差禁用交互），或保存完成后比对版本号。
+
+- [ ] **2.6 `src-tauri/src/lib.rs:60-63, 97-100`**
+  ① `taskkill /IM backend.exe /F` 按映像名全局杀：双开时杀掉另一实例的后端，也可能误杀同名进程；② 端口探测只做裸 TCP 连接，任何占用 8765 的无关进程都会让应用跳过拉起后端并永久「离线」。
+  修复：记录 PID 用进程树 kill；探测改为请求 `/api/health`。**先说明方案再动手。**
+
+- [ ] **2.7 `backend/start.py:108` ↔ `src/services/api.ts:16` ↔ `src-tauri/src/lib.rs:169`**
+  BACKEND_PORT 只有后端遵守，前端 BASE 与 Tauri 探测硬编码 8765 → 用户按文档设置 BACKEND_PORT 后前后端整体断连且无提示。
+  修复：三处统一到同一来源，或移除该环境变量。**两个取舍让用户选。**
+
+- [ ] **2.8 `backend/app/services/pdf_service.py:785, 798-806`**
+  降级纯文本 PDF 按 90 字符折行：中文 10pt 全宽，90 字=900pt 远超 A4 可用 ~515pt，半行文字被裁掉。
+  修复：按绘制宽度估算每行字符数（中文≈每 10pt 一字），或 drawString 前量宽。
+
+- [ ] **2.9 `backend/app/services/pdf_annot_service.py:301-319`【需运行时验证】**
+  打开会话时导入失败的已有批注不在 annotations.json；保存时按 live_xrefs 清理 → 这些批注被静默删除。
+  修复：导入失败的批注记录原样保留策略（不参与删除判定），或保存时对照导入清单给警告。
+
+- [ ] **2.10 `backend/start.py:20-26, 39-47`**
+  日志 5MB 上限只在启动时检查，长会话无限增长；frozen 兜底分支只修 C 层 fd、未替换 sys.stdout/stderr，仍可能复现它本要修的写句柄崩溃。
+  修复：运行期滚动检查；兜底分支同步替换 sys.stdout/stderr。
+
+- [ ] **2.11 `backend/app/services/llm.py:63-71, 87-108`**
+  chat()/chat_stream() 只捕获非 200 状态码；网络异常/超时/200 但非 JSON 裸抛。总结路由 event_gen 只捕 LLMError → SSE 无声截断，前端把残缺内容当正常结束。
+  修复：chat/chat_stream 内把 httpx 异常统一包成 LLMError；event_gen 加 `except Exception` 下发 error 事件。
+
+- [ ] **2.12 `src/components/PDFViewer.tsx:107-108`、`PdfEditor.tsx:94-95`、`PdfAnnotator/index.tsx:140-142`**
+  加载途中卸载时 `if (cancelled) return` 直接返回，拿到的 doc 未 destroy() → pdf.js 文档 + worker 泄漏。
+  修复：`if (cancelled) { doc.destroy(); return; }`。
+
+---
+
+## 批次 3：架构性改动（6 条，先出方案，逐条确认后再改）
+
+- [ ] **3.1 `backend/app/services/pdf_service.py:227-229`【需运行时验证触发频率】**
+  `asyncio.wait_for(asyncio.to_thread(translate…))` 超时只取消等待，线程无法终止：僵尸 pdf2zh 线程（含 4 个 LLM 并发）与后续重试竞争写同一 out_dir，结果文件可能交叉污染。
+  方向：可中断执行器（子进程 + kill），或超时后不再复用同一 out_dir、每次尝试独立子目录。
+
+- [ ] **3.2 `backend/app/services/task_manager.py:19, 39-43`（配 `pdf_trans.py:121-125`）【需运行时验证】**
+  进度队列破坏性单消费：多 SSE 连接瓜分事件；finish() 不唤醒等待者 → 某端可能永远等不到 done。
+  方向：订阅者模型（每连接独立队列，或 last_event 轮询 + 完成广播）。
+
+- [ ] **3.3 `backend/app/services/pdf_service.py:612, 635`（及 560-587 覆盖翻译路径）**
+  降级/覆盖翻译在 async 生成器里直接跑同步重活（全文抽取、fitz 逐页、reportlab 写盘），阻塞整个事件循环 → /api/health 无法响应，前端判「离线」。
+  方向：所有同步重调用 `await asyncio.to_thread(…)`（编辑/批注路由已是正确示范）。
+
+- [ ] **3.4 `src/components/PDFViewer.tsx:223-225`（另 :144 已渲染页不回收）**
+  每页加载即分配 canvas 位图（~2.8MB/页），渲染后永不释放 → 长 PDF × 8 标签页 → GB 级内存。
+  方向：canvas 尺寸延迟到进入视口再分配；远离视口的页释放位图保留 div。
+
+- [ ] **3.5 `src/services/pdf.ts:12, 36`**
+  整份 PDF 以 `number[]` JSON 走 IPC：8~16 倍内存放大 + 巨慢序列化（上传上限 200MB）→ 大文件卡死或 OOM。
+  方向：Rust 侧 `tauri::ipc::Response`/字节通道传 `Vec<u8>`，或临时文件 + plugin-fs。
+
+- [ ] **3.6 `src-tauri/src/lib.rs:79-82`**
+  后端拉起一次性 fire-and-forget：运行中崩溃无任何重拉路径；发布版无控制台，只能重启整个应用。
+  方向：监听子进程退出事件并限次重拉，或前端提供「重启后端」按钮。
+
+---
+
+## 批次 4：代码味道（8 条，隐患清完稳定运行后再处理）
+
+- [ ] **4.1 `backend/app/api/pdf_edit.py:43-45, 58-64`** — _edit_dir 缺 isalnum() 校验（非法 edit_id 应 400 而非 500）；analyze 失败残留上传目录。修复：复用 pdf_annot._work 的校验；失败路径 remove_path。
+- [ ] **4.2 `src/components/PdfAnnotator/index.tsx:312`** — 会话失效重试依赖错误文案正则 `/会话|重新打开|404/`，后端改文案即静默失效。修复：按 HTTP 状态码 404 判断。
+- [ ] **4.3 `src/components/PdfAnnotator/AnnotPage.tsx:128`** — 渲染 effect 依赖内联 reportHasText，父组件重渲染取消重启进行中的页渲染。修复：useCallback 稳定化或移出依赖。
+- [ ] **4.4 `src/components/PdfAnnotator/AnnotPage.tsx:160`**【需运行时验证】— 画笔 move 用渲染闭包里的旧 draft 追加点，高刷快速划动可能丢点。修复：函数式 `setDraft(d => …)`。
+- [ ] **4.5 `src/services/annotStash.ts:71-76`** — docKey 对整份 PDF 多做一次全量拷贝（bytes.slice(0)），大文件多上百 MB。修复：digest 直接接收原数组（只读用途）。
+- [ ] **4.6 `src/App.tsx:168-170, 466-471`** — 多文件拖入提示被成功路径 `setDropError('')` 立即清空；DropErrorBanner 的 onDismiss 内联导致 3 秒计时反复重置。修复：成功路径仅在无提示时清空；onDismiss 用 useCallback。
+- [ ] **4.7 `src/components/PDFViewer.tsx:418, 403-405`** — 页码输入框 onBlur 无条件跳转；导出失败只 console.error。修复：仅回车/失焦且值变化时跳转；失败给 toast。
+- [ ] **4.8 `backend/app/services/pdf_service.py:539`** — 独立「生成译文 PDF」也走 generate_overlay_translation，首条进度从 0.65 起、文案是「切换为覆盖翻译模式」。修复：入口区分，独立任务从 0 报进度、用中性文案。
+
+---
+
+## 附 1：已排除的假阳性（复核不成立，勿重复上报）
+
+- 「切标签丢失翻译 done 事件」（useTranslateTask.ts:87）：不成立——后端 /progress 对已完成任务会重放 last_event，切回标签即自愈。
+- 「annotStash 暴露内部数组引用导致静默丢失」：所有状态更新均为纯函数式（生成新数组），无原地 mutation。
+- 「导入的画笔批注解析错误」：实测 PyMuPDF 1.25.2 的 ink.vertices 确实返回逐笔画嵌套列表，_import_annot 的写法是对的。
+
+## 附 2：未覆盖范围（知晓即可）
+
+- pdf2zh/babeldoc/pdf.js 等第三方库内部不在审计范围。
+- src-tauri/capabilities 权限清单：read_pdf_file/write_file 只校验 .pdf 扩展名，可读写本机任意位置 PDF——桌面应用属合理信任域，但值得知晓。

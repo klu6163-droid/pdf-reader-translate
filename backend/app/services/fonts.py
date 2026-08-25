@@ -16,7 +16,6 @@ import os
 import shutil
 import subprocess
 import sys
-from functools import lru_cache
 from typing import Iterable, Optional, Tuple
 
 # ---------- 候选列表 ----------
@@ -89,19 +88,29 @@ def iter_cjk_font_candidates() -> Iterable[str]:
         yield p
 
 
-@lru_cache(maxsize=1)
+# 自维护缓存：只缓存成功找到的路径。不能用 lru_cache——它会把 None 也缓存住，
+# 导致启动时没找到字体后，用户之后装好字体也永远找不到。
+_cached_font_path: Optional[str] = None
+
+
 def resolve_cjk_font_path() -> Optional[str]:
     """返回第一个存在的中文字体文件路径；找不到返回 None。
 
-    使用 lru_cache 缓存首次成功结果，避免热路径重复 stat。
+    成功结果缓存以避免热路径重复 stat；失败（None）不缓存，
+    下次调用会重新探测（用户可能刚安装字体）。
     """
+    global _cached_font_path
+    if _cached_font_path is not None:
+        return _cached_font_path
     for p in _platform_candidates():
         if os.path.exists(p):
+            _cached_font_path = p
             return p
-    # 兜底：fc-match（Linux/macOS）
+    # 兜底：fc-match（Linux/macOS）；结果为 None 时不写入缓存
     return _fc_match_cjk()
 
 
 def clear_cache() -> None:
     """清理缓存（测试或用户刚安装字体时使用）。"""
-    resolve_cjk_font_path.cache_clear()
+    global _cached_font_path
+    _cached_font_path = None

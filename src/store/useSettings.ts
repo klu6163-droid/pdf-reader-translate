@@ -9,6 +9,8 @@ import type { LLMSettings, PdfTab, RecentFile, HistoryItem, NoteItem } from '@/t
 const MAX_TABS = 8;
 const MAX_RECENT = 12;
 const MAX_HISTORY = 50;
+// 与 history 一致：无上限时长期收藏会缓慢挤占 localStorage 直至写入失败
+const MAX_NOTES = 50;
 
 interface AppState {
   settings: LLMSettings;
@@ -207,7 +209,7 @@ export const useStore = create<AppState>()(
             id: crypto.randomUUID(),
             ts: Date.now(),
           };
-          return { notes: [full, ...state.notes] };
+          return { notes: [full, ...state.notes].slice(0, MAX_NOTES) };
         }),
       removeNote: (id) =>
         set((state) => ({

@@ -159,6 +159,9 @@ function HistoryRow({ item }: { item: HistoryItem }) {
       lastSelection: { text: item.original, page: item.page },
       lastTranslated: item.translated,
       lastTranslateError: '',
+      // 同时清空术语字段，避免旧术语解释错配给回填的译文
+      lastTerms: '',
+      lastTermsError: '',
     });
   };
 
