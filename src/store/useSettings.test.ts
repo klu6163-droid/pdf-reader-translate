@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useStore } from '@/store/useSettings';
+import { useStore, resolveSummarySettings } from '@/store/useSettings';
 
 /**
  * useStore（Zustand + persist）单元测试。
@@ -18,6 +18,7 @@ beforeEach(() => {
     {
       ...INITIAL_SNAPSHOT,
       settings: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+      summarySettings: { apiKey: '', baseUrl: '', model: '' },
       tabs: [],
       activeTabId: null,
       recentFiles: [],
@@ -49,6 +50,50 @@ describe('settings', () => {
     expect(s.apiKey).toBe('sk-xxx');
     expect(s.model).toBe('gpt-4o');
     expect(s.baseUrl).toBe('https://api.openai.com/v1');
+  });
+
+  it('setSummarySettings 合并而不是替换', () => {
+    useStore.getState().setSummarySettings({ apiKey: 'sk-sum' });
+    useStore.getState().setSummarySettings({ model: 'gpt-4o' });
+    const s = useStore.getState().summarySettings;
+    expect(s.apiKey).toBe('sk-sum');
+    expect(s.model).toBe('gpt-4o');
+    expect(s.baseUrl).toBe('');
+  });
+});
+
+describe('resolveSummarySettings（总结配置回退到翻译配置）', () => {
+  const translate = { apiKey: 'sk-trans', baseUrl: 'https://t.example/v1', model: 'cheap-model' };
+
+  it('总结全空 → 完全复用翻译配置', () => {
+    const empty = { apiKey: '', baseUrl: '', model: '' };
+    expect(resolveSummarySettings(translate, empty)).toEqual(translate);
+  });
+
+  it('只填总结模型 → 仅模型不同，其余复用翻译', () => {
+    const res = resolveSummarySettings(translate, { apiKey: '', baseUrl: '', model: 'big-model' });
+    expect(res.model).toBe('big-model');
+    expect(res.apiKey).toBe('sk-trans');
+    expect(res.baseUrl).toBe('https://t.example/v1');
+  });
+
+  it('总结全填 → 完全使用总结配置', () => {
+    const summary = { apiKey: 'sk-sum', baseUrl: 'https://s.example/v1', model: 'sum-model' };
+    expect(resolveSummarySettings(translate, summary)).toEqual(summary);
+  });
+
+  it('空白字符串视为未填写', () => {
+    const res = resolveSummarySettings(translate, { apiKey: '  ', baseUrl: '  ', model: '  ' });
+    expect(res).toEqual(translate);
+  });
+
+  it('getSummarySettings 返回回退后的生效配置', () => {
+    useStore.getState().setSettings({ apiKey: 'sk-trans' });
+    useStore.getState().setSummarySettings({ model: 'big-model' });
+    const eff = useStore.getState().getSummarySettings();
+    expect(eff.apiKey).toBe('sk-trans');
+    expect(eff.model).toBe('big-model');
+    expect(eff.baseUrl).toBe('https://api.openai.com/v1');
   });
 });
 

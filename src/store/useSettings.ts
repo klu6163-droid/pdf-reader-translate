@@ -15,6 +15,12 @@ interface AppState {
   setSettings: (s: Partial<LLMSettings>) => void;
   hasSettings: () => boolean;
 
+  // 文献总结独立配置：任一字段留空时，该字段回退到翻译配置（settings）
+  summarySettings: LLMSettings;
+  setSummarySettings: (s: Partial<LLMSettings>) => void;
+  /** 文献总结实际生效的配置（空字段逐项回退到翻译配置） */
+  getSummarySettings: () => LLMSettings;
+
   // 多标签页
   tabs: PdfTab[];
   activeTabId: string | null;
@@ -70,6 +76,28 @@ const DEFAULT_SETTINGS: LLMSettings = {
   model: 'gpt-4o-mini',
 };
 
+// 文献总结独立配置默认全空 = 完全复用翻译配置
+const DEFAULT_SUMMARY_SETTINGS: LLMSettings = {
+  apiKey: '',
+  baseUrl: '',
+  model: '',
+};
+
+/**
+ * 计算文献总结实际生效的配置：总结配置中为空的字段，
+ * 逐项回退到翻译配置（支持「同一服务商只换模型」到「完全独立两套」的全部场景）。
+ */
+export function resolveSummarySettings(
+  translate: LLMSettings,
+  summary: LLMSettings,
+): LLMSettings {
+  return {
+    apiKey: summary.apiKey.trim() ? summary.apiKey : translate.apiKey,
+    baseUrl: summary.baseUrl.trim() ? summary.baseUrl : translate.baseUrl,
+    model: summary.model.trim() ? summary.model : translate.model,
+  };
+}
+
 function createTab(data: Uint8Array, name: string): PdfTab {
   return {
     id: crypto.randomUUID(),
@@ -106,6 +134,11 @@ export const useStore = create<AppState>()(
       settings: DEFAULT_SETTINGS,
       setSettings: (s) => set((state) => ({ settings: { ...state.settings, ...s } })),
       hasSettings: () => !!get().settings.apiKey,
+
+      summarySettings: DEFAULT_SUMMARY_SETTINGS,
+      setSummarySettings: (s) =>
+        set((state) => ({ summarySettings: { ...state.summarySettings, ...s } })),
+      getSummarySettings: () => resolveSummarySettings(get().settings, get().summarySettings),
 
       tabs: [],
       activeTabId: null,
@@ -203,6 +236,7 @@ export const useStore = create<AppState>()(
       // PDF 字节不落盘
       partialize: (state) => ({
         settings: state.settings,
+        summarySettings: state.summarySettings,
         splitRatio: state.splitRatio,
         syncTranslatedPage: state.syncTranslatedPage,
         recentFiles: state.recentFiles,

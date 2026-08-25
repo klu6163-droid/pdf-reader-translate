@@ -1,6 +1,7 @@
 // 文献总结：提取全文 → 流式生成结构化中文总结。
 // 状态存于当前标签页；切换标签时流不会中断（onDelta 写入所属标签）。
 // 用轻量的 Markdown 渲染（仅处理 ## 标题与段落），避免额外依赖。
+// 模型配置：优先使用「文献总结」专属配置，空字段回退到翻译配置。
 
 import { useCallback } from 'react';
 import { Loader2, Sparkles, AlertCircle } from 'lucide-react';
@@ -23,7 +24,9 @@ export default function Summary() {
       s.updateTab(targetId, { summaryError: '请先打开一个 PDF' });
       return;
     }
-    if (!s.hasSettings()) {
+    // 文献总结使用自己的配置（空字段回退到翻译配置）
+    const summarySettings = s.getSummarySettings();
+    if (!summarySettings.apiKey) {
       s.updateTab(targetId, { summaryError: '请先在「设置」中配置 API Key' });
       s.setSettingsOpen(true);
       return;
@@ -39,7 +42,7 @@ export default function Summary() {
     await streamSummary(
       blob,
       current.name,
-      s.settings,
+      summarySettings,
       // 增量写入「拥有该任务的标签」——即便用户已切到别的标签，
       // 流仍在后台累积到原标签的 summaryContent。
       (delta) => useStore.getState().appendSummary(targetId, delta),

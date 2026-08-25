@@ -76,7 +76,10 @@ python start.py`}
                 <code className="px-1 bg-slate-100 rounded">pip install pdf2zh</code>。
               </li>
               <li>扫描件（图片型 PDF）无法提取文本，翻译与总结会提示无可用文本。</li>
-              <li>首次使用请到右上角「设置」填入你自己的 API Key / Base URL / 模型名。</li>
+              <li>
+                首次使用请到右上角「设置」填入你自己的 API Key / Base URL /
+                模型名；文献总结可单独配置模型，留空则复用翻译配置。
+              </li>
               <li>任务状态存于后端内存，重启后端会丢失进行中的任务。</li>
             </ul>
           </section>
