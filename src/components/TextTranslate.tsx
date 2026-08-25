@@ -27,9 +27,11 @@ export default function TextTranslate() {
   const [loading, setLoading] = useState(false);
   // 术语解释 loading 为组件本地态（结果存于标签页）
   const [termsLoading, setTermsLoading] = useState(false);
-  // 保存进行中的请求控制器，新的划词到来时取消上一个，避免结果错位
-  const abortRef = useRef<AbortController | null>(null);
-  const termsAbortRef = useRef<AbortController | null>(null);
+  // 按标签存放进行中的请求控制器：跨标签划词互不取消（旧实现全局共享，
+  // 标签 B 划词会 abort 标签 A 的进行中请求，被取消方静默停在空白态）。
+  // 同一标签内新划词仍取消旧请求——其状态立刻被新请求覆盖，不会出现空白。
+  const abortMapRef = useRef<Map<string, AbortController>>(new Map());
+  const termsAbortMapRef = useRef<Map<string, AbortController>>(new Map());
 
   // 按钮反馈
   const [copied, setCopied] = useState(false);
@@ -50,11 +52,11 @@ export default function TextTranslate() {
       s.setSettingsOpen(true);
       return;
     }
-    // 取消上一个未完成的请求
-    abortRef.current?.abort();
-    termsAbortRef.current?.abort();
+    // 只取消同一标签上一个未完成的请求（其他标签的请求不受影响）
+    abortMapRef.current.get(targetId)?.abort();
+    termsAbortMapRef.current.get(targetId)?.abort();
     const controller = new AbortController();
-    abortRef.current = controller;
+    abortMapRef.current.set(targetId, controller);
 
     s.updateTab(targetId, {
       lastSelection: { text, page },
@@ -68,8 +70,8 @@ export default function TextTranslate() {
     let translated = '';
     try {
       const res = await translateText(text, s.settings, '中文', controller.signal);
-      // 若期间又发起了新请求，丢弃本次结果
-      if (abortRef.current !== controller) return;
+      // 若期间该标签又发起了新请求，丢弃本次结果
+      if (abortMapRef.current.get(targetId) !== controller) return;
       translated = res.translated;
       useStore.getState().updateTab(targetId, { lastTranslated: translated });
 
@@ -86,12 +88,16 @@ export default function TextTranslate() {
       void fetchTerms(text, targetId, s.settings);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
-      if (abortRef.current !== controller) return;
+      if (abortMapRef.current.get(targetId) !== controller) return;
       useStore.getState().updateTab(targetId, {
         lastTranslateError: e instanceof Error ? e.message : '翻译失败',
       });
     } finally {
-      if (abortRef.current === controller) setLoading(false);
+      if (abortMapRef.current.get(targetId) === controller) {
+        abortMapRef.current.delete(targetId);
+        // loading 是「当前可见标签」的本地态：仅活跃标签的请求结束时复位
+        if (useStore.getState().activeTabId === targetId) setLoading(false);
+      }
     }
   }, []);
 
@@ -103,17 +109,17 @@ export default function TextTranslate() {
       });
       return;
     }
-    termsAbortRef.current?.abort();
+    termsAbortMapRef.current.get(targetId)?.abort();
     const c = new AbortController();
-    termsAbortRef.current = c;
+    termsAbortMapRef.current.set(targetId, c);
     setTermsLoading(true);
     try {
       const terms = await explainTerms(text, settings, c.signal);
-      if (termsAbortRef.current !== c) return;
+      if (termsAbortMapRef.current.get(targetId) !== c) return;
       useStore.getState().updateTab(targetId, { lastTerms: terms, lastTermsError: '' });
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
-      if (termsAbortRef.current !== c) return;
+      if (termsAbortMapRef.current.get(targetId) !== c) return;
       const msg =
         e instanceof TermsUnavailableError
           ? e.message
@@ -122,14 +128,18 @@ export default function TextTranslate() {
             : '术语解释失败';
       useStore.getState().updateTab(targetId, { lastTermsError: msg });
     } finally {
-      if (termsAbortRef.current === c) setTermsLoading(false);
+      if (termsAbortMapRef.current.get(targetId) === c) {
+        termsAbortMapRef.current.delete(targetId);
+        if (useStore.getState().activeTabId === targetId) setTermsLoading(false);
+      }
     }
   }, []);
 
-  // 切换标签时复位本地 loading（旧标签的请求仍在后台写入其自身状态）
+  // 切换标签时按该标签的进行中请求复位本地 loading
+  //（旧标签的请求仍在后台写入其自身状态，互不影响）
   useEffect(() => {
-    setLoading(false);
-    setTermsLoading(false);
+    setLoading(activeTabId ? abortMapRef.current.has(activeTabId) : false);
+    setTermsLoading(activeTabId ? termsAbortMapRef.current.has(activeTabId) : false);
     setCopied(false);
     setNoted(false);
   }, [activeTabId]);
@@ -148,8 +158,10 @@ export default function TextTranslate() {
     window.addEventListener('pdf-selection', handler);
     return () => {
       window.removeEventListener('pdf-selection', handler);
-      abortRef.current?.abort();
-      termsAbortRef.current?.abort();
+      abortMapRef.current.forEach((c) => c.abort());
+      abortMapRef.current.clear();
+      termsAbortMapRef.current.forEach((c) => c.abort());
+      termsAbortMapRef.current.clear();
     };
   }, [doTranslate]);
 

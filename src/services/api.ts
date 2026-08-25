@@ -151,27 +151,70 @@ export async function startPdfTranslate(
   return data.task_id;
 }
 
+/**
+ * 共用：带指数退避重连的进度 SSE 订阅。
+ * 后端 /progress 对（重）订阅会重放 last_event，重连不丢进度；
+ * 一次瞬时抖动（休眠/唤醒）不该让前端永久显示「连接中断」。
+ */
+function subscribeProgressSse(
+  url: string,
+  onEvent: (e: PdfProgressEvent) => void,
+  onError?: (err: Error) => void,
+): () => void {
+  let es: EventSource | null = null;
+  let stopped = false;
+  let attempts = 0;
+  let timer: number | undefined;
+
+  const stop = () => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+    es?.close();
+    es = null;
+  };
+
+  const connect = () => {
+    if (stopped) return;
+    es = new EventSource(url);
+    es.onopen = () => {
+      attempts = 0;
+    };
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data) as PdfProgressEvent;
+        onEvent(data);
+        if (data.done) stop();
+      } catch {
+        /* ignore */
+      }
+    };
+    es.onerror = () => {
+      es?.close();
+      es = null;
+      if (stopped) return;
+      if (attempts >= 8) {
+        stop();
+        onError?.(new Error('进度连接中断'));
+        return;
+      }
+      // 指数退避：1s → 2s → 4s → 8s（封顶），最多重试 8 次
+      const delay = Math.min(1000 * 2 ** attempts, 8000);
+      attempts += 1;
+      timer = window.setTimeout(connect, delay);
+    };
+  };
+
+  connect();
+  return stop;
+}
+
 /** 监听全文翻译进度（SSE） */
 export function subscribePdfProgress(
   taskId: string,
   onEvent: (e: PdfProgressEvent) => void,
   onError?: (err: Error) => void,
 ): () => void {
-  const es = new EventSource(`${BASE}/api/translate/pdf/progress/${taskId}`);
-  es.onmessage = (ev) => {
-    try {
-      const data = JSON.parse(ev.data) as PdfProgressEvent;
-      onEvent(data);
-      if (data.done) es.close();
-    } catch {
-      /* ignore */
-    }
-  };
-  es.onerror = () => {
-    es.close();
-    onError?.(new Error('进度连接中断'));
-  };
-  return () => es.close();
+  return subscribeProgressSse(`${BASE}/api/translate/pdf/progress/${taskId}`, onEvent, onError);
 }
 
 /** 获取翻译结果 PDF 的 URL */
@@ -207,21 +250,7 @@ export function subscribeOverlayProgress(
   onEvent: (e: PdfProgressEvent) => void,
   onError?: (err: Error) => void,
 ): () => void {
-  const es = new EventSource(`${BASE}/api/overlay/pdf/progress/${taskId}`);
-  es.onmessage = (ev) => {
-    try {
-      const data = JSON.parse(ev.data) as PdfProgressEvent;
-      onEvent(data);
-      if (data.done) es.close();
-    } catch {
-      /* ignore */
-    }
-  };
-  es.onerror = () => {
-    es.close();
-    onError?.(new Error('进度连接中断'));
-  };
-  return () => es.close();
+  return subscribeProgressSse(`${BASE}/api/overlay/pdf/progress/${taskId}`, onEvent, onError);
 }
 
 /** 获取覆盖翻译结果 PDF 的 URL */
@@ -263,32 +292,39 @@ export async function streamSummary(
   }
   const decoder = new TextDecoder();
   let buffer = '';
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n\n');
-    buffer = lines.pop() ?? '';
-    for (const block of lines) {
-      const line = block.trim();
-      if (!line.startsWith('data:')) continue;
-      const payload = line.slice(5).trim();
-      try {
-        const obj = JSON.parse(payload);
-        if (obj.error) {
-          onError(obj.error);
-          return;
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() ?? '';
+      for (const block of lines) {
+        const line = block.trim();
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        try {
+          const obj = JSON.parse(payload);
+          if (obj.error) {
+            onError(obj.error);
+            return;
+          }
+          if (obj.delta) onDelta(obj.delta);
+          if (obj.done) {
+            onDone();
+            return;
+          }
+        } catch {
+          /* ignore partial */
         }
-        if (obj.delta) onDelta(obj.delta);
-        if (obj.done) {
-          onDone();
-          return;
-        }
-      } catch {
-        /* ignore partial */
       }
     }
+  } catch (e) {
+    // 流中途断开（休眠/网络）时 reader.read() 会 reject：
+    // 必须转成 onError，否则调用方的 summaryRunning 永久卡在「生成中」
+    onError(e instanceof Error ? e.message : '总结流中断');
+    return;
   }
   onDone();
 }

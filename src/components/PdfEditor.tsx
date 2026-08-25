@@ -92,7 +92,11 @@ export default function PdfEditor({ data, name, onClose }: Props) {
     (async () => {
       try {
         const doc = await pdfjsLib.getDocument({ data: data.slice(0) }).promise;
-        if (cancelled) return;
+        if (cancelled) {
+          // 加载途中卸载：必须销毁，否则 pdf.js 文档 + worker 泄漏
+          doc.destroy();
+          return;
+        }
         pdfRef.current = doc;
         // 触发一次重渲染让 canvas 挂载
         setAnalyzeResult((r) => (r ? { ...r } : r));
@@ -144,6 +148,9 @@ export default function PdfEditor({ data, name, onClose }: Props) {
   const handleSave = useCallback(async () => {
     if (!analyzeResult) return;
     setSaving(true);
+    // 保存快照取自当前 edits：保存期间必须禁止继续编辑，
+    // 否则 await 期间的改动不进产物却提示保存成功
+    setSelectedId(null);
     setBanner({ kind: 'info', text: '正在生成编辑后的 PDF...' });
     try {
       const ops: EditOp[] = [];
@@ -266,6 +273,7 @@ export default function PdfEditor({ data, name, onClose }: Props) {
                 edits={edits}
                 effective={effective}
                 selectedId={selectedId}
+                saving={saving}
                 onSelect={setSelectedId}
                 onPatch={patchEdit}
                 onReset={resetEdit}
@@ -294,6 +302,8 @@ interface PageLayerProps {
     isEdited: boolean;
   };
   selectedId: string | null;
+  /** 保存进行中：禁用所有块交互，保证产物与快照一致 */
+  saving: boolean;
   onSelect: (id: string | null) => void;
   onPatch: (id: string, patch: Partial<EditOp>) => void;
   onReset: (id: string) => void;
@@ -305,6 +315,7 @@ function PageLayer({
   scale,
   effective,
   selectedId,
+  saving,
   onSelect,
   onPatch,
   onReset,
@@ -372,19 +383,23 @@ function PageLayer({
       <span className="absolute -top-2 left-2 -translate-y-full text-[10px] text-slate-300">
         第 {page.page + 1} 页
       </span>
-      {visible &&
-        page.blocks.map((b) => (
-          <BlockBox
-            key={b.id}
-            block={b}
-            scale={scale}
-            eff={effective(b)}
-            selected={selectedId === b.id}
-            onSelect={onSelect}
-            onPatch={onPatch}
-            onReset={onReset}
-          />
-        ))}
+      {visible && (
+        // 保存中：整层禁交互（绝对定位子元素仍相对页面 div 定位，不受影响）
+        <div className={saving ? 'pointer-events-none' : undefined}>
+          {page.blocks.map((b) => (
+            <BlockBox
+              key={b.id}
+              block={b}
+              scale={scale}
+              eff={effective(b)}
+              selected={selectedId === b.id}
+              onSelect={onSelect}
+              onPatch={onPatch}
+              onReset={onReset}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

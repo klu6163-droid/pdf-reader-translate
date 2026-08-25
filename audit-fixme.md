@@ -57,51 +57,51 @@
 
 ## 批次 2：行为变更类（12 条，改完人工过一遍交互）
 
-- [ ] **2.1 `src/services/api.ts:260-262`（配合 `Summary.tsx:39`）**
+- [x] **2.1 `src/services/api.ts:260-262`（配合 `Summary.tsx:39`）**
   streamSummary 的 `reader.read()` 循环无 try/catch；流中途断开时 Promise reject 无人捕获 → summaryRunning 永久卡在「生成中」。
   修复：循环包 try/catch → onError；Summary.tsx 里 await 外加 catch 兜底。
 
-- [ ] **2.2 `src/services/api.ts:163-167`**
+- [x] **2.2 `src/services/api.ts:163-167`**
   SSE onerror 立即 close() 并判失败，无重连；长翻译期间一次瞬时抖动（休眠/唤醒）→ 前端永久显示「进度连接中断」。
   修复：利用后端已有的 last_event 重放能力做指数退避重订阅。
 
-- [ ] **2.3 `src/services/pdf.ts:30-48`**
+- [x] **2.3 `src/services/pdf.ts:30-48`**
   savePdfFile 用一个 catch 把「用户取消/非 Tauri」与真实写盘失败混为一谈：写盘失败静默降级为无效的浏览器下载，用户以为是自己取消，编辑成果无声丢失。
   修复：区分错误来源，invoke 失败抛给调用方显示真实原因，仅「非 Tauri」才降级。
 
-- [ ] **2.4 `src/components/TextTranslate.tsx:53-54`**
+- [x] **2.4 `src/components/TextTranslate.tsx:53-54`**
   全局单实例共享 abortRef，跨标签划词互相取消，被取消方静默停在空白态。
   修复：按标签 id 存放控制器，或至少给被取消方写「已被新请求取消」状态。
 
-- [ ] **2.5 `src/components/PdfEditor.tsx:149-156`、`src/components/PdfAnnotator/index.tsx:300-319`**
+- [x] **2.5 `src/components/PdfEditor.tsx:149-156`、`src/components/PdfAnnotator/index.tsx:300-319`**
   保存快照取自闭包；保存请求 await 期间继续编辑的内容不进产物，但提示保存成功。
   修复：保存期间禁用编辑（现有 saving 态只差禁用交互），或保存完成后比对版本号。
 
-- [ ] **2.6 `src-tauri/src/lib.rs:60-63, 97-100`**
+- [x] **2.6 `src-tauri/src/lib.rs:60-63, 97-100`**
   ① `taskkill /IM backend.exe /F` 按映像名全局杀：双开时杀掉另一实例的后端，也可能误杀同名进程；② 端口探测只做裸 TCP 连接，任何占用 8765 的无关进程都会让应用跳过拉起后端并永久「离线」。
   修复：记录 PID 用进程树 kill；探测改为请求 `/api/health`。**先说明方案再动手。**
 
-- [ ] **2.7 `backend/start.py:108` ↔ `src/services/api.ts:16` ↔ `src-tauri/src/lib.rs:169`**
+- [x] **2.7 `backend/start.py:108` ↔ `src/services/api.ts:16` ↔ `src-tauri/src/lib.rs:169`**
   BACKEND_PORT 只有后端遵守，前端 BASE 与 Tauri 探测硬编码 8765 → 用户按文档设置 BACKEND_PORT 后前后端整体断连且无提示。
   修复：三处统一到同一来源，或移除该环境变量。**两个取舍让用户选。**
 
-- [ ] **2.8 `backend/app/services/pdf_service.py:785, 798-806`**
+- [x] **2.8 `backend/app/services/pdf_service.py:785, 798-806`**
   降级纯文本 PDF 按 90 字符折行：中文 10pt 全宽，90 字=900pt 远超 A4 可用 ~515pt，半行文字被裁掉。
   修复：按绘制宽度估算每行字符数（中文≈每 10pt 一字），或 drawString 前量宽。
 
-- [ ] **2.9 `backend/app/services/pdf_annot_service.py:301-319`【需运行时验证】**
+- [x] **2.9 `backend/app/services/pdf_annot_service.py:301-319`【需运行时验证】**
   打开会话时导入失败的已有批注不在 annotations.json；保存时按 live_xrefs 清理 → 这些批注被静默删除。
   修复：导入失败的批注记录原样保留策略（不参与删除判定），或保存时对照导入清单给警告。
 
-- [ ] **2.10 `backend/start.py:20-26, 39-47`**
+- [x] **2.10 `backend/start.py:20-26, 39-47`**
   日志 5MB 上限只在启动时检查，长会话无限增长；frozen 兜底分支只修 C 层 fd、未替换 sys.stdout/stderr，仍可能复现它本要修的写句柄崩溃。
   修复：运行期滚动检查；兜底分支同步替换 sys.stdout/stderr。
 
-- [ ] **2.11 `backend/app/services/llm.py:63-71, 87-108`**
+- [x] **2.11 `backend/app/services/llm.py:63-71, 87-108`**
   chat()/chat_stream() 只捕获非 200 状态码；网络异常/超时/200 但非 JSON 裸抛。总结路由 event_gen 只捕 LLMError → SSE 无声截断，前端把残缺内容当正常结束。
   修复：chat/chat_stream 内把 httpx 异常统一包成 LLMError；event_gen 加 `except Exception` 下发 error 事件。
 
-- [ ] **2.12 `src/components/PDFViewer.tsx:107-108`、`PdfEditor.tsx:94-95`、`PdfAnnotator/index.tsx:140-142`**
+- [x] **2.12 `src/components/PDFViewer.tsx:107-108`、`PdfEditor.tsx:94-95`、`PdfAnnotator/index.tsx:140-142`**
   加载途中卸载时 `if (cancelled) return` 直接返回，拿到的 doc 未 destroy() → pdf.js 文档 + worker 泄漏。
   修复：`if (cancelled) { doc.destroy(); return; }`。
 

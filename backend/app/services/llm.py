@@ -61,10 +61,17 @@ class LLMService:
         }
         url = f"{self._base}/chat/completions"
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            resp = await client.post(url, headers=self._headers, json=payload)
+            try:
+                resp = await client.post(url, headers=self._headers, json=payload)
+            except httpx.HTTPError as e:
+                # 网络异常/超时等统一包成 LLMError，路由层才能给出可读错误
+                raise LLMError(f"LLM 请求失败（网络或超时）: {e}") from e
             if resp.status_code != 200:
                 raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
-            data = resp.json()
+            try:
+                data = resp.json()
+            except ValueError as e:
+                raise LLMError("LLM 返回了非 JSON 响应，请检查 Base URL 是否正确") from e
             try:
                 content = data["choices"][0]["message"]["content"]
             except (KeyError, IndexError, TypeError) as e:
@@ -89,30 +96,34 @@ class LLMService:
             "stream": True,
         }
         url = f"{self._base}/chat/completions"
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            async with client.stream(
-                "POST", url, headers=self._headers, json=payload
-            ) as resp:
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    raise LLMError(
-                        f"LLM 返回 {resp.status_code}: {body.decode('utf-8', 'ignore')[:200]}"
-                    )
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    chunk = line[len("data:"):].strip()
-                    if chunk == "[DONE]":
-                        break
-                    try:
-                        obj = json.loads(chunk)
-                        delta = obj["choices"][0]["delta"].get("content")
-                        if delta:
-                            yield delta
-                    except Exception:  # noqa: BLE001
-                        # 非标端点的畸形行（delta 为 null、choices 非列表等）
-                        # 一律跳过该行，不能因一行坏数据掐断整个流
-                        continue
+        try:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+                async with client.stream(
+                    "POST", url, headers=self._headers, json=payload
+                ) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        raise LLMError(
+                            f"LLM 返回 {resp.status_code}: {body.decode('utf-8', 'ignore')[:200]}"
+                        )
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        chunk = line[len("data:"):].strip()
+                        if chunk == "[DONE]":
+                            break
+                        try:
+                            obj = json.loads(chunk)
+                            delta = obj["choices"][0]["delta"].get("content")
+                            if delta:
+                                yield delta
+                        except Exception:  # noqa: BLE001
+                            # 非标端点的畸形行（delta 为 null、choices 非列表等）
+                            # 一律跳过该行，不能因一行坏数据掐断整个流
+                            continue
+        except httpx.HTTPError as e:
+            # 建连失败/流中途断开等网络异常统一包成 LLMError
+            raise LLMError(f"LLM 流式请求失败（网络或超时）: {e}") from e
 
     # -------- 高层业务方法 --------
 

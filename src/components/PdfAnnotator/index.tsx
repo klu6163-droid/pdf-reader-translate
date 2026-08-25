@@ -138,7 +138,11 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
     (async () => {
       try {
         const doc = await pdfjsLib.getDocument({ data: data.slice(0) }).promise;
-        if (cancelled) return;
+        if (cancelled) {
+          // 加载途中卸载：必须销毁，否则 pdf.js 文档 + worker 泄漏
+          doc.destroy();
+          return;
+        }
         pdfRef.current = doc;
         setPdfDoc(doc);
       } catch (e) {
@@ -179,8 +183,10 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
     [annotId, color],
   );
 
+  // 保存用的是发起时的快照：保存期间禁止改动，否则不进产物却提示成功
   const patchAnnot = useCallback(
     (id: string, patch: Partial<PdfAnnotation>) => {
+      if (saving) return;
       setAnnotations((prev) =>
         prev.map((a) =>
           a.id === id ? { ...a, ...patch, updated_at: new Date().toISOString() } : a,
@@ -188,20 +194,22 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       );
       if (annotId) updatePdfAnnot(annotId, id, patch).catch(() => {});
     },
-    [annotId],
+    [annotId, saving],
   );
 
   const removeAnnot = useCallback(
     (id: string) => {
+      if (saving) return;
       setAnnotations((prev) => prev.filter((a) => a.id !== id));
       setSelectedId((cur) => (cur === id ? null : cur));
       if (annotId) deletePdfAnnot(annotId, id).catch(() => {});
     },
-    [annotId],
+    [annotId, saving],
   );
 
   // ---- 划选文字 → 文本类批注 ----
   const onContainerMouseUp = useCallback(() => {
+    if (saving) return; // 保存期间禁止新增
     if (!TEXT_TOOLS.includes(tool)) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
@@ -243,7 +251,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       createAnnot({ page: pno, type: tool as Exclude<Tool, 'select'>, text, quads: unique });
     });
     sel.removeAllRanges();
-  }, [tool, scale, createAnnot]);
+  }, [tool, scale, createAnnot, saving]);
 
   // ---- 选择文本工具时，对扫描件给提示 ----
   const pickTool = useCallback((t: Tool) => {
@@ -267,6 +275,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
   // ---- 批注列表跳转 ----
   const jumpTo = useCallback(
     (a: PdfAnnotation) => {
+      if (saving) return; // 保存期间不打开就地编辑
       const el = pageElsRef.current.get(a.page);
       const container = scrollRef.current;
       if (!el || !container) return;
@@ -284,7 +293,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       setFlashId(a.id);
       window.setTimeout(() => setFlashId((cur) => (cur === a.id ? null : cur)), 1600);
     },
-    [scale, openNoteEditor],
+    [scale, openNoteEditor, saving],
   );
 
   // ---- 保存（404 时自动重开会话重试一次）----
@@ -294,6 +303,9 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       return;
     }
     setSaving(true);
+    // 关闭就地编辑面板，保存期间禁止一切改动（快照一致性）
+    setSelectedId(null);
+    setNoteEditId(null);
     setBanner({ kind: 'info', text: '正在把批注写入 PDF...' });
     try {
       let id = annotId;
@@ -416,6 +428,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
                   scale={scale}
                   tool={tool}
                   color={color}
+                  disabled={saving}
                   annotations={annotations.filter((a) => a.page === pg.page)}
                   selectedId={selectedId}
                   noteEditId={noteEditId}

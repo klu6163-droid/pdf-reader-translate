@@ -65,6 +65,10 @@ async def summary_stream(
             yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
         except LLMError as e:
             yield f"data: {json.dumps({'error': str(e), 'done': True}, ensure_ascii=False)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            # 非 LLM 异常（全文提取失败等）也不能无声截断，
+            # 否则前端把残缺内容当正常结束
+            yield f"data: {json.dumps({'error': f'总结失败: {e}', 'done': True}, ensure_ascii=False)}\n\n"
         finally:
             remove_path(tmp_path)
 

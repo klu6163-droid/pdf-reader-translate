@@ -13,6 +13,8 @@ interface Props {
   tool: Tool;
   color: string;
   annotations: PdfAnnotation[];
+  /** 保存进行中等场景：禁用本页全部批注交互 */
+  disabled: boolean;
   selectedId: string | null;
   noteEditId: string | null;
   flashId: string | null;
@@ -33,6 +35,7 @@ export default function AnnotPage({
   tool,
   color,
   annotations,
+  disabled,
   selectedId,
   noteEditId,
   flashId,
@@ -184,8 +187,8 @@ export default function AnnotPage({
     setDraft(null);
   };
 
-  const captureActive = tool === 'note' || tool === 'rectangle' || tool === 'ink';
-  const overlayInteractive = tool === 'select';
+  const captureActive = !disabled && (tool === 'note' || tool === 'rectangle' || tool === 'ink');
+  const overlayInteractive = !disabled && tool === 'select';
 
   return (
     <div

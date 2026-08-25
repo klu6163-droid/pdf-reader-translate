@@ -5,7 +5,7 @@
 
 import { useCallback } from 'react';
 import { Loader2, Sparkles, AlertCircle } from 'lucide-react';
-import { streamSummary, bytesToPdfBlob } from '@/services/api';
+import { streamSummary, bytesToPdfBlob, errMsg } from '@/services/api';
 import { useStore, useActiveTab } from '@/store/useSettings';
 import MarkdownLite from './shared/MarkdownLite';
 
@@ -39,20 +39,28 @@ export default function Summary() {
     });
 
     const blob = bytesToPdfBlob(current.pdfData);
-    await streamSummary(
-      blob,
-      current.name,
-      summarySettings,
-      // 增量写入「拥有该任务的标签」——即便用户已切到别的标签，
-      // 流仍在后台累积到原标签的 summaryContent。
-      (delta) => useStore.getState().appendSummary(targetId, delta),
-      () => useStore.getState().updateTab(targetId, { summaryRunning: false }),
-      (err) =>
-        useStore.getState().updateTab(targetId, {
-          summaryRunning: false,
-          summaryError: err,
-        }),
-    );
+    try {
+      await streamSummary(
+        blob,
+        current.name,
+        summarySettings,
+        // 增量写入「拥有该任务的标签」——即便用户已切到别的标签，
+        // 流仍在后台累积到原标签的 summaryContent。
+        (delta) => useStore.getState().appendSummary(targetId, delta),
+        () => useStore.getState().updateTab(targetId, { summaryRunning: false }),
+        (err) =>
+          useStore.getState().updateTab(targetId, {
+            summaryRunning: false,
+            summaryError: err,
+          }),
+      );
+    } catch (e) {
+      // 兜底：streamSummary 自身未捕获的异常也不能让 summaryRunning 卡死
+      useStore.getState().updateTab(targetId, {
+        summaryRunning: false,
+        summaryError: errMsg(e),
+      });
+    }
   }, []);
 
   const running = tab?.summaryRunning ?? false;

@@ -18,34 +18,47 @@ export function basename(path: string): string {
   return path.split(/[\\/]/).pop() || 'document.pdf';
 }
 
+/** 纯浏览器降级：触发下载。 */
+function browserDownload(data: Uint8Array, name: string): void {
+  // 拷到独立 ArrayBuffer：BlobPart 不接受 ArrayBufferLike（可能是 SharedArrayBuffer）
+  const copy = new Uint8Array(data.length);
+  copy.set(data);
+  const blob = new Blob([copy.buffer], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /**
  * 把 PDF 字节保存到本地（导出/另存）。
  * Tauri：save 对话框选路径 + write_file command 落盘；返回保存路径，取消则 null。
  * 非 Tauri（浏览器 dev）：降级为触发浏览器下载。
+ *
+ * 注意区分错误来源：只有「非 Tauri 环境」才降级下载；
+ * 写盘失败等真实错误必须抛给调用方显示，否则编辑成果会被无声丢失。
  */
 export async function savePdfFile(data: Uint8Array, suggestedName: string): Promise<string | null> {
   // 复制一份，避免序列化原 buffer
   const copy = new Uint8Array(data.length);
   copy.set(data);
-  try {
-    const path = await save({
-      defaultPath: suggestedName,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    });
-    if (!path) return null; // 用户取消
-    await invoke<void>('write_file', { path, data: Array.from(copy) });
-    return path;
-  } catch {
-    // 非 Tauri 环境降级：浏览器下载
-    const blob = new Blob([copy], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = suggestedName;
-    a.click();
-    URL.revokeObjectURL(url);
+
+  // 非 Tauri 环境（纯浏览器）没有 invoke/save，才降级为浏览器下载
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    browserDownload(copy, suggestedName);
     return null;
   }
+
+  const path = await save({
+    defaultPath: suggestedName,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (!path) return null; // 用户取消
+  // 写盘失败：不吞异常，抛给调用方显示真实原因
+  await invoke<void>('write_file', { path, data: Array.from(copy) });
+  return path;
 }
 
 export interface DragDropCallbacks {

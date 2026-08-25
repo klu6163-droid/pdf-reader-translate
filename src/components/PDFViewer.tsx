@@ -105,7 +105,11 @@ export default function PDFViewer({
       try {
         const src = typeof data === 'string' ? { url: data } : { data: data.slice(0) };
         const doc = await pdfjsLib.getDocument(src as any).promise;
-        if (cancelled) return;
+        if (cancelled) {
+          // 加载途中卸载：必须销毁，否则 pdf.js 文档 + worker 泄漏
+          doc.destroy();
+          return;
+        }
         pdfRef.current = doc;
         setNumPages(doc.numPages);
         setLoading(false);

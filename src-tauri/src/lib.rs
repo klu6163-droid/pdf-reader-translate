@@ -43,22 +43,29 @@ fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
 /// 保存 Python 子进程句柄，应用退出时一并关闭
 struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
-/// 杀掉启动时存入的 sidecar 子进程（取走句柄并 kill），并按映像名清掉所有 backend.exe
-/// （PyInstaller onefile 的子进程不会被 bootloader 的 kill 带走，需 taskkill 兜底）。
+/// 杀掉启动时存入的 sidecar 子进程：先 kill 句柄，再按 PID 杀整棵进程树
+/// （PyInstaller onefile 的子进程不会被 bootloader 的 kill 带走，/T 兜住）。
+/// 不再用 /IM 按映像名全局杀：双开会杀掉另一实例的后端，还可能误杀同名无关进程。
 fn kill_backend(window: &tauri::Window) {
-    if let Some(state) = window.try_state::<BackendProcess>() {
-        if let Ok(mut child) = state.0.lock() {
-            if let Some(proc) = child.take() {
+    let pid: Option<u32> = window.try_state::<BackendProcess>().and_then(|state| {
+        state
+            .0
+            .lock()
+            .ok()
+            .and_then(|mut child| child.take())
+            .map(|proc| {
+                let pid = proc.pid();
                 let _ = proc.kill();
-            }
-        }
-    }
+                pid
+            })
+    });
+    let _ = pid; // 仅发布版 Windows 需要；其余平台避免 unused 警告
     #[cfg(all(windows, not(debug_assertions)))]
-    {
+    if let Some(pid) = pid {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let _ = std::process::Command::new("taskkill")
-            .args(["/IM", "backend.exe", "/F", "/T"])
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
             .creation_flags(CREATE_NO_WINDOW)
             .status();
     }
@@ -162,15 +169,33 @@ async fn start_backend_sidecar(app: &tauri::AppHandle) {
     }
 }
 
-/// 探测本地 8765 端口是否有服务在监听。
+/// 探测「我们的后端」是否已在监听：请求 /api/health 并检查 200。
+/// 裸 TCP 连接无法区分自己的后端与占用 8765 的无关进程——
+/// 那会让应用跳过拉起后端并永久「离线」。
 fn backend_is_up() -> bool {
+    use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::time::Duration;
     let addr = match "127.0.0.1:8765".parse() {
         Ok(a) => a,
         Err(_) => return false,
     };
-    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
+    if stream
+        .write_all(b"GET /api/health HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = vec![0u8; 512];
+    let n = stream.read(&mut buf).unwrap_or(0);
+    // 响应状态行形如 "HTTP/1.1 200 OK"
+    String::from_utf8_lossy(&buf[..n]).contains(" 200 ")
 }
 
 /// 在多个候选路径中查找 start.py，返回第一个存在的绝对路径。（仅开发模式用）

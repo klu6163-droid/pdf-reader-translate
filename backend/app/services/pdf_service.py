@@ -779,15 +779,20 @@ def _write_text_pdf(pages: list[str], out_path: str) -> None:
         font_name = _register_text_pdf_font()
         c = canvas.Canvas(out_path, pagesize=A4)
         width, height = A4
+        margin = 40
+        font_size = 10
+        # 按实际绘制宽度折行（旧实现固定 90 字符：中文全宽 10pt/字 → 900pt，
+        # 远超 A4 可用宽度 ~515pt，半行文字被裁掉）
+        draw_width = width - margin * 2
         for page_text in pages:
-            c.setFont(font_name, 10)
-            y = height - 40
-            for line in _wrap_lines(page_text, 90):
-                if y < 40:
+            c.setFont(font_name, font_size)
+            y = height - margin
+            for line in _wrap_lines_by_width(page_text, font_name, font_size, draw_width):
+                if y < margin:
                     c.showPage()
-                    c.setFont(font_name, 10)
-                    y = height - 40
-                c.drawString(40, y, line)
+                    c.setFont(font_name, font_size)
+                    y = height - margin
+                c.drawString(margin, y, line)
                 y -= 14
             c.showPage()
         c.save()
@@ -795,12 +800,31 @@ def _write_text_pdf(pages: list[str], out_path: str) -> None:
         raise RuntimeError(f"生成降级 PDF 失败: {e}") from e
 
 
-def _wrap_lines(text: str, width: int) -> list[str]:
-    """简单按宽度折行。"""
+def _est_char_width(ch: str, font_size: float) -> float:
+    """估算单字符宽度：CJK/全角约等于字号，拉丁字符约为字号的 55%。"""
+    return font_size if ord(ch) > 0x2E7F else font_size * 0.55
+
+
+def _wrap_lines_by_width(
+    text: str, font_name: str, font_size: float, max_width: float
+) -> list[str]:
+    """按绘制宽度折行：优先用 pdfmetrics 实测，失败退化为字符宽度估算。"""
+    from reportlab.pdfbase import pdfmetrics
+
+    def measure(s: str) -> float:
+        try:
+            return pdfmetrics.stringWidth(s, font_name, font_size)
+        except Exception:  # noqa: BLE001
+            return sum(_est_char_width(c, font_size) for c in s)
+
     out: list[str] = []
     for raw in text.split("\n"):
-        while len(raw) > width:
-            out.append(raw[:width])
-            raw = raw[width:]
-        out.append(raw)
+        line = ""
+        for ch in raw:
+            if line and measure(line + ch) > max_width:
+                out.append(line)
+                line = ch
+            else:
+                line += ch
+        out.append(line)
     return out
