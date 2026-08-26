@@ -113,9 +113,26 @@
 
 ## 批次 3：架构性改动（6 条，先出方案，逐条确认后再改）
 
-- [ ] **3.1 `backend/app/services/pdf_service.py:227-229`【需运行时验证触发频率】**
+- [x] **3.1 `backend/app/services/pdf_service.py:227-229`【需运行时验证触发频率】**
   `asyncio.wait_for(asyncio.to_thread(translate…))` 超时只取消等待，线程无法终止：僵尸 pdf2zh 线程（含 4 个 LLM 并发）与后续重试竞争写同一 out_dir，结果文件可能交叉污染。
   方向：可中断执行器（子进程 + kill），或超时后不再复用同一 out_dir、每次尝试独立子目录。
+  **措辞修正**：现实现超时后 `timed_out → break` 跳过修复重试链，僵尸的真实并发对象是
+  覆盖翻译（共享 out_dir 并发），而非下一次 pdf2zh 尝试；跨尝试污染的真实通道是
+  babeldoc 被 wait_for 掐断后的残留产物被 `_find_output`「任意 .pdf」兜底捡到。
+  已修（选型 C：协作取消 + 每次尝试独立 out_dir；子进程方案 A 对比后留作升级路径，
+  `run_pdf2zh_cli` 签名未动，换 A 是同接缝替换）：
+  ① pdf2zh 路线利用其原生 `cancellation_event`（页边界检查）：超时置位事件，线程最迟
+  下一页边界 CancelledError 退出，止住 LLM 额度燃烧；随后等待至多 `GRACE_REAP_SECONDS`
+  （60s）确认退出（回收成功），超上限「放弃回收」并记录——取消信号已置位，产物限于
+  本次尝试目录。② babeldoc 路线：其 `async_translate` 吞 CancelledError 并无界等待内部
+  worker，直接 wait_for 会拖死编排——改「主超时 + 回收上限」两段有界等待。
+  ③ 编排层每次尝试独立子目录 `attempt-{mode}/`、修复副本 `repaired-{mode}/`，
+  `_clean_stale_outputs` 退役。超时/回收/放弃结果统一进 `_log_attempt`。
+  先红后绿：基线测试在未修复代码上坐实「任务报超时返回 0.9s 内、线程未停、1.5s 后
+  zombie-late.pdf 写入同一 out_dir」；改写为回归断言后 4 项在未修复代码全红、修复后全绿
+  （`tests/test_pdf2zh_zombie.py`：回收成功/放弃回收/babeldoc 有界/目录隔离）。
+  全量 26 项 pytest 通过。待用户运行时验证触发频率：临时把 1200 调小（如 30）+ 大文件
+  或慢假 LLM 端点复现超时，观察 backend.log 的回收/放弃记录（验毕还原，不进代码）。
 
 - [ ] **3.2 `backend/app/services/task_manager.py:19, 39-43`（配 `pdf_trans.py:121-125`）【需运行时验证】**
   进度队列破坏性单消费：多 SSE 连接瓜分事件；finish() 不唤醒等待者 → 某端可能永远等不到 done。

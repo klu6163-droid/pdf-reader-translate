@@ -20,6 +20,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from typing import AsyncGenerator, Optional, Tuple
@@ -113,16 +114,27 @@ def _openai_envs(config: LLMConfig) -> dict:
     }
 
 
-def _clean_stale_outputs(out_dir: str, pdf_path: str) -> None:
-    """每次尝试前清掉上次可能残留的 {base}-mono.pdf / {base}-dual.pdf。"""
-    base = os.path.splitext(os.path.basename(pdf_path))[0]
-    for suffix in ("-mono.pdf", "-dual.pdf"):
-        p = os.path.join(out_dir, f"{base}{suffix}")
-        try:
-            if os.path.exists(p):
-                os.remove(p)
-        except OSError:
-            pass
+# ---------- 超时回收（审计 3.1）----------
+
+# 超时置取消信号后，等待线程/任务真正退出的上限（秒）。
+# 上限内退出记「回收成功」；超上限记「放弃回收」——取消信号已置位，
+# 线程会在下一个检查点（页边界 / babeldoc 内部检查点）自行退出，
+# 且它只能写进自己那次尝试的隔离子目录，不再污染其他路径。
+GRACE_REAP_SECONDS = 60.0
+
+
+class _AttemptTimeout(Exception):
+    """内部异常：某次尝试超时，str 已含回收结果描述。"""
+
+
+def _timeout_msg(timeout: float, exited: bool, wait_secs: float) -> str:
+    """统一的超时文案：挂到 _log_attempt 的 error 字段与返回值上。"""
+    if exited:
+        return f"超时（{timeout:.0f}s），取消信号生效，{wait_secs:.1f}s 内退出"
+    return (
+        f"超时（{timeout:.0f}s），等待 {wait_secs:.0f}s 仍未退出，放弃回收"
+        "（取消信号已置位，将在下一检查点退出；产物限于本次尝试目录）"
+    )
 
 
 def _find_output(out_dir: str, pdf_path: str) -> Optional[str]:
@@ -194,16 +206,26 @@ async def run_pdf2zh_cli(
       - compatible_skip_subset: translate(compatible=True, skip_subset_fonts=True)
 
     返回 (ok, result_path, error_msg)。
+
+    超时处理（审计 3.1）：wait_for 只能取消等待、杀不死线程——旧实现超时后
+    僵尸线程继续烧 LLM 额度，收尾时还会往共享目录写产物。现在：
+    - pdf2zh 路线：向 translate() 传 cancellation_event，超时置位后线程在下一页
+      边界收到 CancelledError 退出；再等至多 GRACE_REAP_SECONDS 确认退出
+      （回收成功），超上限放弃回收并记录——取消信号已置位，线程最迟在下一
+      检查点退出。
+    - babeldoc 路线：其 async_translate 会吞 CancelledError 并无界等待内部
+      worker，直接 wait_for 会被拖着无上限，改用「主超时 + 回收上限」两段
+      有界等待（见 _run_babeldoc_with_timeout）。
+    调用方传入的 out_dir 是本次尝试的隔离子目录（见
+    translate_pdf_with_fallback），被放弃线程的残留写入不会交叉污染。
     """
     os.makedirs(out_dir, exist_ok=True)
-    _clean_stale_outputs(out_dir, pdf_path)
     attempt_path = _prepare_pdf2zh_input(pdf_path, out_dir)
     start = time.monotonic()
     try:
         if mode == "babeldoc":
-            result_path = await asyncio.wait_for(
-                _run_babeldoc(attempt_path, out_dir, config, target_lang),
-                timeout=timeout,
+            result_path = await _run_babeldoc_with_timeout(
+                attempt_path, out_dir, config, target_lang, timeout
             )
         else:
             from pdf2zh import translate  # 延迟导入，配合 find_spec
@@ -224,16 +246,34 @@ async def run_pdf2zh_cli(
             elif mode == "compatible_skip_subset":
                 kwargs["compatible"] = True
                 kwargs["skip_subset_fonts"] = True
-            await asyncio.wait_for(
-                asyncio.to_thread(translate, **kwargs), timeout=timeout
-            )
+
+            # set() 在事件循环线程调用；is_set() 由工作线程在页边界轮询，
+            # 只读布尔值，跨线程安全
+            cancel_event = asyncio.Event()
+            finished = threading.Event()
+
+            def _runner() -> None:
+                try:
+                    translate(cancellation_event=cancel_event, **kwargs)
+                finally:
+                    finished.set()
+
+            try:
+                await asyncio.wait_for(asyncio.to_thread(_runner), timeout=timeout)
+            except asyncio.TimeoutError:
+                cancel_event.set()
+                reap_start = time.monotonic()
+                exited = await asyncio.to_thread(finished.wait, GRACE_REAP_SECONDS)
+                raise _AttemptTimeout(
+                    _timeout_msg(timeout, exited, time.monotonic() - reap_start)
+                )
             result_path = _find_output(out_dir, pdf_path)
         if not result_path:
             raise RuntimeError("pdf2zh 未生成结果文件")
         _log_attempt(mode, time.monotonic() - start, True, None)
         return True, result_path, None
-    except asyncio.TimeoutError:
-        msg = f"超时（{timeout:.0f}s）"
+    except _AttemptTimeout as e:
+        msg = str(e)
         _log_attempt(mode, time.monotonic() - start, False, msg)
         return False, None, msg
     except Exception as e:  # noqa: BLE001
@@ -244,6 +284,39 @@ async def run_pdf2zh_cli(
 
 def _noop_cb(*args, **kwargs) -> None:
     pass
+
+
+async def _run_babeldoc_with_timeout(
+    pdf_path: str,
+    out_dir: str,
+    config: LLMConfig,
+    target_lang: str,
+    timeout: float,
+) -> str:
+    """有界等待的 babeldoc 尝试。
+
+    不能直接 wait_for：babeldoc 的 async_translate 捕获 CancelledError 后
+    `await finish_event.wait()` 等内部 worker 收尾，吞掉取消后外层等待没有
+    上限。这里两段等待：主超时 → 取消 → 至多再等 GRACE_REAP_SECONDS →
+    仍不退出则放弃回收（记录）。放弃后任务继续收尾，其写入限于本次尝试
+    的隔离目录；babeldoc 内部会按自己的 cancel 检查点停下。
+    """
+    task = asyncio.create_task(_run_babeldoc(pdf_path, out_dir, config, target_lang))
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if done:
+        return task.result()  # 内部异常抛给调用方统一记日志
+
+    task.cancel()
+    reap_start = time.monotonic()
+    done, _ = await asyncio.wait({task}, timeout=GRACE_REAP_SECONDS)
+    exited = bool(done)
+    if not exited:
+        # 放弃的任务最终收尾时可能带异常，取走以免
+        # "Task exception was never retrieved" 警告
+        task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
+    raise _AttemptTimeout(_timeout_msg(timeout, exited, time.monotonic() - reap_start))
 
 
 async def _run_babeldoc(pdf_path: str, out_dir: str, config: LLMConfig, target_lang: str) -> str:
@@ -707,8 +780,11 @@ async def translate_pdf_with_fallback(
     timed_out = False
     for mode, msg, prog in attempts:
         yield TranslateProgress(prog, msg, mode="pdf2zh")
+        # 每次尝试独立子目录（审计 3.1）：超时被放弃的线程只能写进本次目录，
+        # 各尝试产物互不串扰，也免去清理上一次残留的逻辑
+        attempt_dir = os.path.join(out_dir, f"attempt-{mode}")
         ok, result, err = await run_pdf2zh_cli(
-            pdf_path, out_dir, config, target_lang, mode=mode, model=model,
+            pdf_path, attempt_dir, config, target_lang, mode=mode, model=model,
         )
         if ok and result:
             yield TranslateProgress(
@@ -729,8 +805,10 @@ async def translate_pdf_with_fallback(
                 ("compatible_skip_subset", "正在用兼容副本重试...", 0.55),
             ):
                 yield TranslateProgress(prog, msg, mode="pdf2zh")
+                # 修复副本的尝试同样用独立子目录（与首轮尝试区分开）
+                attempt_dir = os.path.join(out_dir, f"repaired-{mode}")
                 ok, result, err = await run_pdf2zh_cli(
-                    repaired, out_dir, config, target_lang, mode=mode, model=model,
+                    repaired, attempt_dir, config, target_lang, mode=mode, model=model,
                 )
                 if ok and result:
                     try:
