@@ -12,6 +12,8 @@
     "tauri:build": "tauri build",
     "build:backend": "node scripts/build-backend.js",
     "dist": "npm run tauri:build",
+    "version:sync": "node scripts/sync-version.js --write",
+    "version:check": "node scripts/sync-version.js --check",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",

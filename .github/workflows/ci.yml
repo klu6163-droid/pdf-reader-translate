@@ -17,6 +17,8 @@ jobs:
           cache: 'npm'
       - name: Install deps
         run: npm ci
+      - name: Check version consistency
+        run: npm run version:check
       - name: Typecheck
         run: npm run typecheck
       - name: Lint

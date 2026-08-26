@@ -6,7 +6,7 @@
 - 桌面端：Tauri v2
 - PDF 渲染：PDF.js（pdfjs-dist）
 - 后端：Python FastAPI（作为 sidecar 由 Tauri 拉起）
-- 全文翻译：封装 pdf2zh / PDFMathTranslate（未安装时自动降级为纯文本翻译）
+- 全文翻译：优先使用 pdf2zh / PDFMathTranslate；缺少 pdf2zh 时转为覆盖翻译，覆盖翻译不可用时再转为纯文本译文
 - AI 调用：统一的 OpenAI-compatible LLM 层
 
 > **重要**：API Key 不写死在代码里。首次使用请点右上角「设置」填入 `API Key / Base URL / 模型名`，配置仅保存在本地。
@@ -97,7 +97,7 @@ python start.py          # 监听 http://127.0.0.1:8765
 > ```bash
 > pip install pdf2zh
 > ```
-> 未安装时，全文翻译会自动降级为纯文本翻译，并在界面明确提示。
+> 未安装时，全文翻译会先降级为覆盖翻译；若 PyMuPDF 不可用或找不到可嵌入中文字体，才进一步降级为纯文本译文。界面会显示当前模式。
 
 ### 2. 启动前端 / 桌面应用
 
@@ -128,11 +128,13 @@ npm run dev              # 打开 http://localhost:1420
 
 ## 打包成双击 .exe
 
-把 Python 后端用 PyInstaller 打成单一 exe，作为 Tauri sidecar 随主程序发布。用户无需装 Python/Node/Rust。
+把 Python 后端用 PyInstaller 打成 onedir 目录（`backend.exe` 启动器 + `_internal/` 依赖），作为 Tauri sidecar 随主程序发布。用户无需安装 Python/Node/Rust，后端启动时也无需像 onefile 模式那样先解压到临时目录。
 
 ### 前置
 - 已装 PyInstaller：`pip install pyinstaller`
 - 已装 Rust + MinGW（见上文前置要求）
+
+应用版本以 `src-tauri/tauri.conf.json` 为唯一来源。修改版本后运行 `npm run version:sync` 同步其余清单；CI 会用 `npm run version:check` 阻止版本漂移。
 
 ### 一键打包
 
@@ -140,8 +142,8 @@ npm run dev              # 打开 http://localhost:1420
 npm run dist
 ```
 
-等价于 `npm run build:backend && npm run tauri:build`，产出安装包：
-`src-tauri/target/release/bundle/nsis/PDF Reader Translate_0.2.2_x64-setup.exe`
+`npm run dist` 会调用 `tauri:build`；其 `beforeBuildCommand` 已自动执行前端和后端构建，无需预先手动运行 `npm run build:backend`。安装包输出到：
+`src-tauri/target/release/bundle/nsis/PDF Reader Translate_<版本号>_x64-setup.exe`
 
 ### 是否打包 pdf2zh（影响体积与全文翻译能力）
 
@@ -149,12 +151,12 @@ npm run dist
 
 | 值 | sidecar 体积 | 安装包体积 | 全文翻译 |
 |----|------------|----------|---------|
-| `True`（阶段A） | ~58MB | ~62MB | 降级纯文本模式 |
-| `False`（阶段B，当前） | ~513MB | ~250MB | 保留排版/公式/图表（pdf2zh） |
+| `True`（阶段A） | 待实测更新 | 待实测更新 | 无 pdf2zh；先走覆盖翻译，必要时再走纯文本兜底 |
+| `False`（阶段B，当前） | 待实测更新 | 待实测更新 | 保留排版/公式/图表（pdf2zh） |
 
 改 `PDF2ZH_EXCLUDE` 后需重跑 `npm run build:backend`。
 
-> 阶段B 体积大（onnxruntime/cv2/pymupdf 原生库 + onnx 模型），sidecar 首次启动需解压，后端就绪较慢（约 10-20s）。首次全文翻译需联网下载版面识别模型（pdf2zh 行为，之后走缓存）。
+> 阶段B 包含 onnxruntime/cv2/pymupdf 等原生库和模型，体积及冷启动时间待在干净发布环境实测更新。当前采用 onedir，不存在 onefile 的首次启动解压；首次全文翻译仍可能按 pdf2zh 的行为联网下载版面识别模型，之后走缓存。
 
 ### 打包版注意事项
 - 不签名：Windows 首次运行会弹 SmartScreen「未知发布者」→「更多信息」→「仍要运行」
@@ -198,14 +200,28 @@ windres: preprocessing failed.
 | 全文翻译启动 | POST | `/api/translate/pdf/start` |
 | 全文翻译进度(SSE) | GET | `/api/translate/pdf/progress/{task_id}` |
 | 全文翻译结果 | GET | `/api/translate/pdf/result/{task_id}` |
+| 覆盖翻译启动 | POST | `/api/overlay/pdf/start` |
+| 覆盖翻译进度(SSE) | GET | `/api/overlay/pdf/progress/{task_id}` |
+| 覆盖翻译结果 | GET | `/api/overlay/pdf/result/{task_id}` |
 | 文献总结(SSE) | POST | `/api/summary/stream` |
+| PDF 编辑解析 | POST | `/api/edit/pdf/analyze` |
+| PDF 编辑保存 | POST | `/api/edit/pdf/save` |
+| PDF 编辑结果 | GET | `/api/edit/pdf/result/{edit_id}` |
+| 打开批注会话 | POST | `/api/annot/pdf/open` |
+| 获取批注列表 | GET | `/api/annot/pdf/{annot_id}/annotations` |
+| 新增批注 | POST | `/api/annot/pdf/{annot_id}/annotations` |
+| 更新批注 | PUT | `/api/annot/pdf/{annot_id}/annotations/{aid}` |
+| 删除批注 | DELETE | `/api/annot/pdf/{annot_id}/annotations/{aid}` |
+| 保存批注 PDF | POST | `/api/annot/pdf/{annot_id}/save` |
+| 获取批注 PDF | GET | `/api/annot/pdf/{annot_id}/result` |
+| 导出批注 | GET | `/api/annot/pdf/{annot_id}/export?format=json|markdown` |
 | 健康检查 | GET | `/api/health` |
 
 ---
 
 ## 已知限制（MVP）
 
-- 全文翻译的排版保真度取决于 pdf2zh；未安装则为纯文本降级。
+- 全文翻译的排版保真度取决于 pdf2zh；未安装时先降级为覆盖翻译，覆盖翻译不可用时再降级为纯文本译文。
 - 扫描件（图片型 PDF）无法提取文本，总结/降级翻译会提示无可用文本。
 - 任务状态存于后端内存，重启后端会丢失进行中的任务。
 - 左右页码同步为「就近页」策略，非像素级对齐。
