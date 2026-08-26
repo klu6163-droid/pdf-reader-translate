@@ -68,6 +68,14 @@ jobs:
         env:
           HOME: ${{ runner.temp }}/pdf2zh-home
         run: pytest
+      - name: Verify OpenAPI snapshot
+        working-directory: backend
+        env:
+          HOME: ${{ runner.temp }}/pdf2zh-home
+        run: |
+          python scripts/export_openapi.py
+          git diff --exit-code -- openapi.json
+          test -z "$(git status --porcelain --untracked-files=all -- openapi.json)"
 
   rust:
     name: Rust (cargo check + test)

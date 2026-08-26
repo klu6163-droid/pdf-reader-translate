@@ -10,12 +10,20 @@ import asyncio
 import os
 import tempfile
 import uuid
-from typing import Any, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
 
+from app.models.schemas import (
+    AnnotationBody,
+    AnnotationListResponse,
+    AnnotationPatch,
+    AnnotationResponse,
+    DeleteAnnotationResponse,
+    OpenAnnotationsResponse,
+    SaveAnnotationsRequest,
+    SaveAnnotationsResponse,
+)
 from app.services import pdf_annot_service as svc
 from app.services.file_utils import cleanup_old_entries, scoped_path
 
@@ -24,26 +32,6 @@ router = APIRouter(prefix="/api/annot/pdf", tags=["pdf-annot"])
 ANNOT_WORK_DIR = os.path.join(tempfile.gettempdir(), "pdf_annot")
 os.makedirs(ANNOT_WORK_DIR, exist_ok=True)
 cleanup_old_entries(ANNOT_WORK_DIR)
-
-
-class AnnotationBody(BaseModel):
-    id: Optional[str] = None
-    page: int = 0
-    type: str = "highlight"
-    text: str = ""
-    comment: str = ""
-    color: str = "#ffd633"
-    rect: Optional[list[float]] = None
-    quads: Optional[list[list[float]]] = None
-    ink: Optional[list[list[list[float]]]] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    source: Optional[str] = "user"
-    xref: Optional[int] = None
-
-
-class SaveRequest(BaseModel):
-    annotations: list[AnnotationBody]
 
 
 def _work(annot_id: str) -> str:
@@ -62,8 +50,8 @@ def _require_session(annot_id: str) -> str:
     return work
 
 
-@router.post("/open")
-async def open_pdf(file: UploadFile = File(...)) -> dict:
+@router.post("/open", response_model=OpenAnnotationsResponse)
+async def open_pdf(file: UploadFile = File(...)) -> OpenAnnotationsResponse:
     """上传 PDF 建立批注会话；返回 annot_id、页尺寸与 PDF 内已有批注。"""
     annot_id = uuid.uuid4().hex
     work = _work(annot_id)
@@ -76,50 +64,59 @@ async def open_pdf(file: UploadFile = File(...)) -> dict:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
     result["annot_id"] = annot_id
-    return result
+    return OpenAnnotationsResponse.model_validate(result)
 
 
-@router.get("/{annot_id}/annotations")
-async def list_annotations(annot_id: str) -> dict:
+@router.get("/{annot_id}/annotations", response_model=AnnotationListResponse)
+async def list_annotations(annot_id: str) -> AnnotationListResponse:
     work = _require_session(annot_id)
-    return {"annotations": svc.get_pdf_annotations(work)}
+    return AnnotationListResponse(annotations=svc.get_pdf_annotations(work))
 
 
-@router.post("/{annot_id}/annotations")
-async def add_annotation(annot_id: str, body: AnnotationBody) -> dict:
+@router.post("/{annot_id}/annotations", response_model=AnnotationResponse)
+async def add_annotation(annot_id: str, body: AnnotationBody) -> AnnotationResponse:
     work = _require_session(annot_id)
     try:
-        return svc.add_pdf_annotation(work, body.model_dump())
+        result = svc.add_pdf_annotation(work, body.model_dump())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"添加批注失败：{e}")
+    return AnnotationResponse.model_validate(result)
 
 
-@router.put("/{annot_id}/annotations/{aid}")
-async def update_annotation(annot_id: str, aid: str, body: dict[str, Any]) -> dict:
+@router.put("/{annot_id}/annotations/{aid}", response_model=AnnotationResponse)
+async def update_annotation(
+    annot_id: str, aid: str, body: AnnotationPatch
+) -> AnnotationResponse:
     work = _require_session(annot_id)
     try:
-        return svc.update_pdf_annotation(work, aid, body)
+        result = svc.update_pdf_annotation(
+            work, aid, body.model_dump(exclude_unset=True)
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="批注不存在")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"更新批注失败：{e}")
+    return AnnotationResponse.model_validate(result)
 
 
-@router.delete("/{annot_id}/annotations/{aid}")
-async def delete_annotation(annot_id: str, aid: str) -> dict:
+@router.delete("/{annot_id}/annotations/{aid}", response_model=DeleteAnnotationResponse)
+async def delete_annotation(annot_id: str, aid: str) -> DeleteAnnotationResponse:
     work = _require_session(annot_id)
-    return {"deleted": svc.delete_pdf_annotation(work, aid)}
+    return DeleteAnnotationResponse(deleted=svc.delete_pdf_annotation(work, aid))
 
 
-@router.post("/{annot_id}/save")
-async def save_annotated(annot_id: str, req: SaveRequest) -> dict:
+@router.post("/{annot_id}/save", response_model=SaveAnnotationsResponse)
+async def save_annotated(
+    annot_id: str, req: SaveAnnotationsRequest
+) -> SaveAnnotationsResponse:
     """把批注写入 PDF 副本，另存 annotated.pdf。body 带完整列表（前端为准）。"""
     work = _require_session(annot_id)
     annots = [a.model_dump() for a in req.annotations]
     try:
-        return await asyncio.to_thread(svc.save_annotated_pdf, work, annots)
+        result = await asyncio.to_thread(svc.save_annotated_pdf, work, annots)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"批注保存失败，请重试：{e}")
+    return SaveAnnotationsResponse.model_validate(result)
 
 
 @router.get("/{annot_id}/result")

@@ -1,6 +1,6 @@
 // 划词翻译：监听 PDFViewer 派发的 pdf-selection 事件，调用后端翻译。
 // 选中文本与译文存于当前标签页；loading 为组件本地态（仅活跃标签可见）。
-// 术语解释由前端直连 LLM 生成（不动后端），CORS 失败时降级提示。
+// 术语解释经本地后端代理生成，与主翻译共用网络与日志边界。
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -14,7 +14,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { translateText } from '@/services/api';
-import { explainTerms, TermsUnavailableError } from '@/services/llmDirect';
+import { explainTerms, TermsUnavailableError } from '@/services/api';
 import { useStore, useActiveTab } from '@/store/useSettings';
 import MarkdownLite from './shared/MarkdownLite';
 import type { LLMSettings, SelectionInfo } from '@/types';
@@ -84,7 +84,7 @@ export default function TextTranslate() {
         tabName: owner?.name ?? 'PDF',
       });
 
-      // 异步生成术语解释（前端直连 LLM）；失败仅标记，不影响主翻译
+      // 异步生成术语解释；失败仅标记，不影响主翻译
       void fetchTerms(text, targetId, s.settings);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -101,7 +101,7 @@ export default function TextTranslate() {
     }
   }, []);
 
-  // 前端直连 LLM 生成术语解释
+  // 经本地后端代理生成术语解释，与翻译共用连接与日志边界
   const fetchTerms = useCallback(async (text: string, targetId: string, settings: LLMSettings) => {
     if (!settings.apiKey) {
       useStore.getState().updateTab(targetId, {

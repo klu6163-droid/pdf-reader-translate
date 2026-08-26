@@ -185,7 +185,7 @@ export interface PdfTab {
   lastSelection: SelectionInfo | null;
   lastTranslated: string;
   lastTranslateError: string;
-  // 术语解释（前端直连 LLM 生成，与最近一次翻译对应）
+  // 术语解释（经本地后端代理生成，与最近一次翻译对应）
   lastTerms: string;
   lastTermsError: string;
 }

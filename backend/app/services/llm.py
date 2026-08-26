@@ -25,6 +25,12 @@ ANTI_HALLUCINATION = (
 
 SUMMARY_HEADINGS = "## 研究问题\n## 方法\n## 主要贡献\n## 实验结果\n## 结论\n## 局限性\n## 中文摘要"
 
+TERMS_SYSTEM_PROMPT = """你是一名专业术语词典助手。给定一段（可能是科研/技术文献的）原文，请：
+1. 识别其中最重要的专业术语（通常 3~8 个，过多则只取最关键）。
+2. 用中文给出每个术语的简短解释（1~2 句，面向该文语境）。
+3. 若原文为中文，术语保留原文形式并解释；若判断不出明确术语，输出「原文未包含明确的专业术语」。
+输出格式为 Markdown 列表：`- 术语：解释`。不要输出与术语无关的内容，不要复述原文。"""
+
 
 class LLMError(Exception):
     """LLM 调用相关错误。"""
@@ -141,6 +147,20 @@ class LLMService:
             {"role": "user", "content": text},
         ]
         return await self.chat(messages)
+
+    async def explain_terms(self, text: str) -> str:
+        """识别并解释原文中的专业术语。"""
+        content = await self.chat(
+            [
+                {"role": "system", "content": TERMS_SYSTEM_PROMPT},
+                {"role": "user", "content": text[:4000]},
+            ],
+            temperature=0.2,
+            timeout=90.0,
+        )
+        if not isinstance(content, str) or not content.strip():
+            raise LLMError("术语解释返回为空")
+        return content.strip()
 
     def build_summary_messages(self, full_text: str) -> list[dict]:
         """构造文献总结的消息。要求结构化、可控、不编造。"""

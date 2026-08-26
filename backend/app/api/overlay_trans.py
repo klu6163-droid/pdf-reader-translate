@@ -11,7 +11,7 @@ import json
 import os
 import tempfile
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.models.schemas import LLMConfig, StartTaskResponse
@@ -37,7 +37,6 @@ cleanup_old_entries(WORK_DIR)
 @router.post("/start", response_model=StartTaskResponse)
 async def start_overlay_translate(
     file: UploadFile = File(...),
-    target_lang: str = Form("zh"),
     api_key: str = Header("", alias="x-llm-api-key"),
     base_url: str = Header("https://api.openai.com/v1", alias="x-llm-base-url"),
     model: str = Header("gpt-4o-mini", alias="x-llm-model"),

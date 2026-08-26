@@ -30,6 +30,14 @@ export class TimeoutError extends Error {
   }
 }
 
+/** 术语解释经本地后端代理失败时的可识别错误。 */
+export class TermsUnavailableError extends Error {
+  constructor(message = '术语解释暂不可用') {
+    super(message);
+    this.name = 'TermsUnavailableError';
+  }
+}
+
 /** 保留非成功响应的状态码，供需要按语义重试的调用方判断。 */
 class HttpStatusError extends Error {
   readonly status: number;
@@ -141,6 +149,43 @@ export async function translateText(
   return resp.json();
 }
 
+/** 通过本地后端代理生成术语解释，浏览器不再直连用户配置的 LLM。 */
+export async function explainTerms(
+  text: string,
+  settings: LLMSettings,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!settings.apiKey || !settings.baseUrl) {
+    throw new TermsUnavailableError('请先在「设置」中配置 API Key 与 Base URL');
+  }
+  let resp: Response;
+  try {
+    resp = await apiFetch(
+      '/api/translate/terms',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text.slice(0, 4000), config: toConfig(settings) }),
+        signal,
+      },
+      90,
+    );
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new TermsUnavailableError(errMsg(error));
+  }
+  if (!resp.ok) throw new TermsUnavailableError(`术语解释请求失败：${await safeDetail(resp)}`);
+  const data: unknown = await resp.json();
+  const terms =
+    data && typeof data === 'object' && 'terms' in data
+      ? (data as { terms?: unknown }).terms
+      : undefined;
+  if (typeof terms !== 'string' || !terms.trim()) {
+    throw new TermsUnavailableError('术语解释返回为空');
+  }
+  return terms.trim();
+}
+
 /** 启动 PDF 全文翻译，返回 task_id */
 export async function startPdfTranslate(
   file: File | Blob,
@@ -240,11 +285,9 @@ export async function startOverlayTrans(
   file: File | Blob,
   filename: string,
   settings: LLMSettings,
-  targetLang = 'zh',
 ): Promise<string> {
   const form = new FormData();
   form.append('file', file, filename);
-  form.append('target_lang', targetLang);
   const resp = await apiFetch(
     '/api/overlay/pdf/start',
     { method: 'POST', body: form, headers: llmHeaders(settings) },

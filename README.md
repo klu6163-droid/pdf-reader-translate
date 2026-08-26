@@ -221,6 +221,7 @@ windres: preprocessing failed.
 | 功能 | 方法 | 路径 |
 |------|------|------|
 | 划词翻译 | POST | `/api/translate/text` |
+| 术语解释 | POST | `/api/translate/terms` |
 | 配置测试 | POST | `/api/settings/test` |
 | 全文翻译启动 | POST | `/api/translate/pdf/start` |
 | 全文翻译进度(SSE) | GET | `/api/translate/pdf/progress/{task_id}` |

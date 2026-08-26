@@ -9,12 +9,15 @@ import asyncio
 import os
 import tempfile
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 
+from app.models.schemas import (
+    AnalyzePdfResponse,
+    SaveEditsRequest,
+    SaveEditsResponse,
+)
 from app.services import pdf_edit_service
 from app.services.file_utils import cleanup_old_entries, remove_path, scoped_path
 
@@ -26,20 +29,6 @@ os.makedirs(EDIT_WORK_DIR, exist_ok=True)
 cleanup_old_entries(EDIT_WORK_DIR)
 
 
-class EditOp(BaseModel):
-    id: str
-    text: Optional[str] = None
-    bbox: Optional[list[float]] = None
-    size: Optional[float] = None
-    color: Optional[str] = None
-    deleted: Optional[bool] = False
-
-
-class SaveEditsRequest(BaseModel):
-    edit_id: str
-    edits: list[EditOp]
-
-
 def _edit_dir(edit_id: str) -> str:
     # scoped_path 会校验不越界；edit_id 只应是我们生成的 hex。
     # 先拒绝非法值，避免把无效会话 ID 变成 500。
@@ -48,8 +37,8 @@ def _edit_dir(edit_id: str) -> str:
     return scoped_path(EDIT_WORK_DIR, edit_id)
 
 
-@router.post("/analyze")
-async def analyze(file: UploadFile = File(...)) -> dict:
+@router.post("/analyze", response_model=AnalyzePdfResponse)
+async def analyze(file: UploadFile = File(...)) -> AnalyzePdfResponse:
     """上传 PDF，解析每页文本块，返回 edit_id + 文本块 + 预测编辑模式。"""
     edit_id = uuid.uuid4().hex
     work = _edit_dir(edit_id)
@@ -69,11 +58,11 @@ async def analyze(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
 
     result["edit_id"] = edit_id
-    return result
+    return AnalyzePdfResponse.model_validate(result)
 
 
-@router.post("/save")
-async def save(req: SaveEditsRequest) -> dict:
+@router.post("/save", response_model=SaveEditsResponse)
+async def save(req: SaveEditsRequest) -> SaveEditsResponse:
     """应用编辑并另存为新 PDF。返回实际编辑模式与友好提示。"""
     work = _edit_dir(req.edit_id)
     source = os.path.join(work, "source.pdf")
@@ -93,7 +82,7 @@ async def save(req: SaveEditsRequest) -> dict:
 
     result["edit_id"] = req.edit_id
     result["ok"] = True
-    return result
+    return SaveEditsResponse.model_validate(result)
 
 
 @router.get("/result/{edit_id}")

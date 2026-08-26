@@ -94,6 +94,66 @@ async def test_text_translate_upstream_error_returns_502(monkeypatch):
     assert response.json() == {"detail": "上游 LLM 暂不可用"}
 
 
+async def test_terms_explanation_success_uses_backend_llm(monkeypatch):
+    seen: dict[str, str] = {}
+
+    class FakeLLMService:
+        def __init__(self, config):
+            seen["api_key"] = config.api_key
+            seen["base_url"] = config.base_url
+            seen["model"] = config.model
+
+        async def explain_terms(self, text: str):
+            seen["text"] = text
+            return "- polymer：聚合物"
+
+    monkeypatch.setattr(translate_api, "LLMService", FakeLLMService)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/translate/terms",
+            json={"text": " polymer ", "config": _text_request()["config"]},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"terms": "- polymer：聚合物", "model": "fake-model"}
+    assert seen == {
+        "api_key": "sk-test",
+        "base_url": "https://llm.invalid/v1",
+        "model": "fake-model",
+        "text": "polymer",
+    }
+
+
+async def test_terms_explanation_upstream_error_is_logged_without_source(
+    monkeypatch, caplog
+):
+    source = "CONFIDENTIAL_TERM_SOURCE"
+
+    class FailingLLMService:
+        def __init__(self, config):
+            assert config.api_key == "sk-test"
+
+        async def explain_terms(self, text: str):
+            assert text == source
+            raise LLMError("上游术语服务失败")
+
+    monkeypatch.setattr(translate_api, "LLMService", FailingLLMService)
+    caplog.set_level("WARNING", logger="app.translate")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/translate/terms",
+            json={"text": source, "config": _text_request()["config"]},
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "上游术语服务失败"}
+    assert "terms explanation failed model=fake-model" in caplog.text
+    assert source not in caplog.text
+    assert "sk-test" not in caplog.text
+
+
 async def _no_cleanup(*args, **kwargs) -> None:
     """测试自行用 tmp_path 回收产物，避免创建 6 小时后台清理任务。"""
 
