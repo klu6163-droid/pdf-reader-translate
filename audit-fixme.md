@@ -134,9 +134,30 @@
   全量 26 项 pytest 通过。待用户运行时验证触发频率：临时把 1200 调小（如 30）+ 大文件
   或慢假 LLM 端点复现超时，观察 backend.log 的回收/放弃记录（验毕还原，不进代码）。
 
-- [ ] **3.2 `backend/app/services/task_manager.py:19, 39-43`（配 `pdf_trans.py:121-125`）【需运行时验证】**
+- [x] **3.2 `backend/app/services/task_manager.py:19, 39-43`（配 `pdf_trans.py:121-125`）【需运行时验证】**
   进度队列破坏性单消费：多 SSE 连接瓜分事件；finish() 不唤醒等待者 → 某端可能永远等不到 done。
   方向：订阅者模型（每连接独立队列，或 last_event 轮询 + 完成广播）。
+  已修（选型 A：每连接独立订阅队列；方案 B「last_event 轮询 + 完成广播」对比后弃用，
+  理由：合并语义下慢消费者丢中间事件、严格上无法保证「两边都收全」，与验收标准冲突；
+  A 的有界队列已把最坏内存压到 ~75KB/连接，B 的内存优势无实际意义）：
+  ① task_manager 改订阅者模型：`subscribe/unsubscribe` 每连接一个有界队列
+  （`MAX_QUEUE_SIZE=256`，满时丢最旧——进度是状态量、done 永远最新不会被丢；
+  生产者广播全程 `put_nowait`，慢/卡消费者不阻塞翻译任务，不踢人）；
+  `push()` 广播 + 记 last_event；`finish()` 置标志外另向每个订阅者注入兜底 done
+  唤醒全部等待者（生产者已先推 done 时重复注入幂等无害）。
+  ② 消费端统一为 `subscribe_events()`：先注册订阅再取快照（之间无 await，不漏事件；
+  快照含 seq/last_event/finished/error，防 yield 挂起期间任务完成导致重放旧事件），
+  入场重放 last_event（2.2 重连与切标签自愈语义不变），重叠事件按内部 seq 去重
+  （seq 不进 SSE payload，事件格式不变），收到 done 退出，finally 无条件退订
+  （客户端断开/异常不泄漏订阅队列）。`pdf_trans`/`overlay_trans` 两处 event_gen 同构重写。
+  ③ 任务对象清理时机不变（沿用 `cleanup_later` 6h TTL，`/result` 下载依赖）。
+  先红后绿：`tests/test_progress_fanout.py`（httpx ASGITransport 打真实 app 走完整
+  SSE 路径，仅 monkeypatch 翻译生成器）并发开两个 SSE 连接——未修复代码实测瓜分实锤：
+  连接 A 收 step-1,3,5,7,9 + done，连接 B 只收偶数位且永等 done（wait_for 超时应诊），
+  全文/覆盖两条路由均红；修复后两边各收全量 11 条有序事件并正常结束。
+  单测补：双订阅全量广播、finish 唤醒全部等待者、满队列丢最旧保最新、重放恰好一次
+  无重复无缺口、完成后重放 done 一次、无事件 finish 合成 done 兜底、退订防泄漏。
+  全量 34 项 pytest 通过，前端零改动、tsc 0 错误。
 
 - [x] **3.3 `backend/app/services/pdf_service.py:612, 635`（及 560-587 覆盖翻译路径）**
   降级/覆盖翻译在 async 生成器里直接跑同步重活（全文抽取、fitz 逐页、reportlab 写盘），阻塞整个事件循环 → /api/health 无法响应，前端判「离线」。

@@ -96,11 +96,10 @@ async def start_overlay_translate(
 
 @router.get("/progress/{task_id}")
 async def overlay_progress(task_id: str) -> StreamingResponse:
-    """SSE 进度流。"""
-    task = task_manager.get(task_id)
+    """SSE 进度流：每连接独立订阅，多并发连接各自收到全量事件（审计 3.2）。"""
 
     async def event_gen():
-        if not task:
+        if task_manager.get(task_id) is None:
             event = {
                 "progress": 1.0,
                 "message": "任务不存在或已清理（后端可能已重启），请重新发起覆盖翻译",
@@ -110,24 +109,10 @@ async def overlay_progress(task_id: str) -> StreamingResponse:
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             return
 
-        if task.finished:
-            event = task.last_event or {
-                "progress": 1.0,
-                "message": task.error or "覆盖翻译完成",
-                "done": True,
-                "error": bool(task.error),
-            }
+        # 入场重放 last_event + 实时广播直到 done，由 subscribe_events 统一保证
+        # （重连重放兼容 2.2；finally 退订，客户端断开不泄漏订阅队列）。
+        async for event in task_manager.subscribe_events(task_id, done_message="覆盖翻译完成"):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            return
-
-        if task.last_event:
-            yield f"data: {json.dumps(task.last_event, ensure_ascii=False)}\n\n"
-
-        while True:
-            event = await task.queue.get()
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            if event.get("done"):
-                break
 
     return StreamingResponse(
         event_gen(),
