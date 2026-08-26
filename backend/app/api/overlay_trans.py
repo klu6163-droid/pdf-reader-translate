@@ -40,6 +40,14 @@ async def start_overlay_translate(
     api_key: str = Header("", alias="x-llm-api-key"),
     base_url: str = Header("https://api.openai.com/v1", alias="x-llm-base-url"),
     model: str = Header("gpt-4o-mini", alias="x-llm-model"),
+    max_concurrency: int = Header(1, alias="x-llm-max-concurrency", ge=1, le=8),
+    request_interval_ms: int = Header(
+        1100, alias="x-llm-request-interval-ms", ge=0, le=60000
+    ),
+    max_retries: int = Header(5, alias="x-llm-max-retries", ge=0, le=10),
+    retry_base_seconds: float = Header(
+        2.0, alias="x-llm-retry-base-seconds", ge=0.1, le=60.0
+    ),
 ) -> StartTaskResponse:
     """接收 PDF，创建覆盖翻译任务（跳过 pdf2zh），立即返回 task_id。"""
     if not api_key:
@@ -51,7 +59,15 @@ async def start_overlay_translate(
     with open(upload_path, "wb") as f:
         f.write(await file.read())
 
-    config = LLMConfig(api_key=api_key, base_url=base_url, model=model)
+    config = LLMConfig(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        max_concurrency=max_concurrency,
+        request_interval_ms=request_interval_ms,
+        max_retries=max_retries,
+        retry_base_seconds=retry_base_seconds,
+    )
     out_dir = scoped_path(WORK_DIR, task.id)
     trace = start_translation("overlay", task.id)
 

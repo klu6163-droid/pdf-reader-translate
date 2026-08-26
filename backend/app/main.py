@@ -32,7 +32,7 @@ app.add_middleware(BodySizeLimitMiddleware)
 # 允许 Tauri / Vite 前端跨域访问（默认白名单在 app.config.allowed_origins）。
 # 生产上如需临时放宽，可通过环境变量 ALLOWED_ORIGINS="a,b,c" 覆盖。
 # allow_methods 必须含 PUT（批注更新 pdf_annot.py 用 @router.put）；
-# allow_headers 必须含全部 x-llm-* 头（pdf_trans/overlay_trans/summary 都收这三个），
+# allow_headers 必须含全部 x-llm-* 头（pdf_trans/overlay_trans/summary 共用），
 # 否则预检拦截 -> 三大翻译功能全挂。
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +46,10 @@ app.add_middleware(
         "x-llm-api-key",
         "x-llm-base-url",
         "x-llm-model",
+        "x-llm-max-concurrency",
+        "x-llm-request-interval-ms",
+        "x-llm-max-retries",
+        "x-llm-retry-base-seconds",
     ],
 )
 

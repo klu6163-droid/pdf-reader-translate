@@ -193,6 +193,10 @@ async def test_pdf_translation_start_progress_result(
     async def fake_progress(upload_path: str, out_dir: str, config, mode: str):
         seen["upload_is_pdf"] = Path(upload_path).read_bytes().startswith(b"%PDF")
         seen["api_key"] = config.api_key
+        seen["max_concurrency"] = config.max_concurrency
+        seen["request_interval_ms"] = config.request_interval_ms
+        seen["max_retries"] = config.max_retries
+        seen["retry_base_seconds"] = config.retry_base_seconds
         seen["mode"] = mode
         await asyncio.sleep(0.05)
         yield TranslateProgress(0.25, "处理中", mode=mode)
@@ -243,6 +247,10 @@ async def test_pdf_translation_start_progress_result(
                     "x-llm-api-key": "sk-test",
                     "x-llm-base-url": "https://llm.invalid/v1",
                     "x-llm-model": "fake-model",
+                    "x-llm-max-concurrency": "2",
+                    "x-llm-request-interval-ms": "750",
+                    "x-llm-max-retries": "3",
+                    "x-llm-retry-base-seconds": "1.5",
                 },
             )
             assert started.status_code == 200, started.text
@@ -269,6 +277,10 @@ async def test_pdf_translation_start_progress_result(
 
     assert seen["upload_is_pdf"] is True
     assert seen["api_key"] == "sk-test"
+    assert seen["max_concurrency"] == 2
+    assert seen["request_interval_ms"] == 750
+    assert seen["max_retries"] == 3
+    assert seen["retry_base_seconds"] == 1.5
     if kind == "full":
         assert seen["target_lang"] == "zh"
     else:

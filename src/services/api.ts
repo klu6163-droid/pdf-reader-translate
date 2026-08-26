@@ -12,6 +12,7 @@ import type {
   PdfAnnotation,
   SaveAnnotResult,
 } from '@/types';
+import { normalizeLLMRateLimit } from '@/services/llmConfig';
 
 const BASE = 'http://127.0.0.1:8765';
 
@@ -513,15 +514,29 @@ export async function exportPdfAnnots(
 }
 
 function llmHeaders(s: LLMSettings): Record<string, string> {
+  const rateLimit = normalizeLLMRateLimit(s.rateLimit);
   return {
     'x-llm-api-key': s.apiKey,
     'x-llm-base-url': s.baseUrl,
     'x-llm-model': s.model,
+    'x-llm-max-concurrency': String(rateLimit.maxConcurrency),
+    'x-llm-request-interval-ms': String(rateLimit.requestIntervalMs),
+    'x-llm-max-retries': String(rateLimit.maxRetries),
+    'x-llm-retry-base-seconds': String(rateLimit.retryBaseSeconds),
   };
 }
 
 function toConfig(s: LLMSettings) {
-  return { api_key: s.apiKey, base_url: s.baseUrl, model: s.model };
+  const rateLimit = normalizeLLMRateLimit(s.rateLimit);
+  return {
+    api_key: s.apiKey,
+    base_url: s.baseUrl,
+    model: s.model,
+    max_concurrency: rateLimit.maxConcurrency,
+    request_interval_ms: rateLimit.requestIntervalMs,
+    max_retries: rateLimit.maxRetries,
+    retry_base_seconds: rateLimit.retryBaseSeconds,
+  };
 }
 
 /** 把任意 error 转成可读中文提示。 */

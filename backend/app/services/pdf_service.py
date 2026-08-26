@@ -23,7 +23,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import AsyncGenerator, Optional, Tuple
+from typing import AsyncGenerator, Callable, Optional, Tuple
 
 from pypdf import PdfReader, PdfWriter
 
@@ -69,6 +69,23 @@ class TranslateProgress:
     result_path: Optional[str] = None
     mode: str = ""                # "pdf2zh" 或 "fallback"
     error: bool = False           # 失败时为 True，前端据此显示错误而非加载结果
+
+
+@dataclass
+class _AttemptProgress:
+    """pdf2zh 单次尝试内部上报的归一化进度。"""
+
+    fraction: float
+    message: str
+
+
+@dataclass
+class _AttemptResult:
+    """pdf2zh 单次尝试的最终结果，用作内部进度流的终止事件。"""
+
+    ok: bool
+    result_path: Optional[str]
+    error: Optional[str]
 
 
 # ---------- 可用性 / 模型 ----------
@@ -196,6 +213,7 @@ async def run_pdf2zh_cli(
     mode: str = "normal",
     model=None,
     timeout: float = 1200.0,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """进程内调用 pdf2zh 跑一次翻译。
 
@@ -225,10 +243,30 @@ async def run_pdf2zh_cli(
     try:
         if mode == "babeldoc":
             result_path = await _run_babeldoc_with_timeout(
-                attempt_path, out_dir, config, target_lang, timeout
+                attempt_path,
+                out_dir,
+                config,
+                target_lang,
+                timeout,
+                progress_callback,
             )
         else:
             from pdf2zh import translate  # 延迟导入，配合 find_spec
+
+            def _page_progress(t) -> None:
+                if progress_callback is None:
+                    return
+                current = max(int(getattr(t, "n", 0) or 0), 0)
+                total = max(int(getattr(t, "total", 0) or 0), 0)
+                if total:
+                    # pdf2zh 在每页开始时回调。用 n/(total+1) 表示逐页估算，
+                    # 避免单页 PDF 一开始就显示 100%，最终 100% 仍只由产物完成事件发出。
+                    fraction = min(current / (total + 1), 0.99)
+                    message = f"正在翻译第 {current}/{total} 页..."
+                else:
+                    fraction = 0.0
+                    message = "全文翻译处理中..."
+                progress_callback(fraction, message)
 
             kwargs = dict(
                 files=[attempt_path],
@@ -237,9 +275,9 @@ async def run_pdf2zh_cli(
                 lang_out=target_lang,
                 service="openai",
                 envs=_openai_envs(config),
-                thread=4,
+                thread=config.max_concurrency,
                 model=model,
-                callback=_noop_cb,
+                callback=_page_progress if progress_callback is not None else None,
             )
             if mode == "skip_subset":
                 kwargs["skip_subset_fonts"] = True
@@ -282,16 +320,13 @@ async def run_pdf2zh_cli(
         return False, None, msg
 
 
-def _noop_cb(*args, **kwargs) -> None:
-    pass
-
-
 async def _run_babeldoc_with_timeout(
     pdf_path: str,
     out_dir: str,
     config: LLMConfig,
     target_lang: str,
     timeout: float,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> str:
     """有界等待的 babeldoc 尝试。
 
@@ -301,7 +336,11 @@ async def _run_babeldoc_with_timeout(
     仍不退出则放弃回收（记录）。放弃后任务继续收尾，其写入限于本次尝试
     的隔离目录；babeldoc 内部会按自己的 cancel 检查点停下。
     """
-    task = asyncio.create_task(_run_babeldoc(pdf_path, out_dir, config, target_lang))
+    task = asyncio.create_task(
+        _run_babeldoc(
+            pdf_path, out_dir, config, target_lang, progress_callback
+        )
+    )
     done, _ = await asyncio.wait({task}, timeout=timeout)
     if done:
         return task.result()  # 内部异常抛给调用方统一记日志
@@ -319,7 +358,13 @@ async def _run_babeldoc_with_timeout(
     raise _AttemptTimeout(_timeout_msg(timeout, exited, time.monotonic() - reap_start))
 
 
-async def _run_babeldoc(pdf_path: str, out_dir: str, config: LLMConfig, target_lang: str) -> str:
+async def _run_babeldoc(
+    pdf_path: str,
+    out_dir: str,
+    config: LLMConfig,
+    target_lang: str,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+) -> str:
     """调用 babeldoc 后端（对应 CLI 的 --babeldoc）。"""
     from babeldoc.high_level import async_translate as yadt_translate
     from babeldoc.high_level import init as yadt_init
@@ -345,11 +390,22 @@ async def _run_babeldoc(pdf_path: str, out_dir: str, config: LLMConfig, target_l
         lang_out=target_lang,
         no_dual=False,
         no_mono=False,
-        qps=4,
+        qps=config.max_concurrency,
     )
     result_path: Optional[str] = None
     async for event in yadt_translate(yadt_config):
-        if event.get("type") == "finish":
+        event_type = event.get("type")
+        if progress_callback is not None and event_type in {
+            "progress_start",
+            "progress_update",
+            "progress_end",
+        }:
+            overall = float(event.get("overall_progress", 0.0) or 0.0)
+            progress_callback(
+                min(max(overall / 100.0, 0.0), 0.99),
+                "全文翻译处理中...",
+            )
+        if event_type == "finish":
             result = event.get("translate_result")
             if result is not None:
                 result_path = (
@@ -362,6 +418,89 @@ async def _run_babeldoc(pdf_path: str, out_dir: str, config: LLMConfig, target_l
     if not result_path:
         raise RuntimeError("babeldoc 未生成结果文件")
     return result_path
+
+
+async def _stream_pdf2zh_attempt(
+    pdf_path: str,
+    out_dir: str,
+    config: LLMConfig,
+    target_lang: str,
+    *,
+    mode: str,
+    model,
+    start_progress: float,
+) -> AsyncGenerator[TranslateProgress | _AttemptResult, None]:
+    """运行一次 pdf2zh，同时把线程/异步生成器进度转回当前事件循环。"""
+    loop = asyncio.get_running_loop()
+    updates: asyncio.Queue[_AttemptProgress] = asyncio.Queue()
+    accept_updates = threading.Event()
+    accept_updates.set()
+
+    def _on_progress(fraction: float, message: str) -> None:
+        if not accept_updates.is_set():
+            return
+        update = _AttemptProgress(
+            min(max(float(fraction), 0.0), 0.99),
+            message,
+        )
+        # normal/skip_subset 的 callback 来自工作线程；babeldoc 当前来自事件循环。
+        # call_soon_threadsafe 对两者都安全，并保持服务层不直接依赖 task_manager。
+        try:
+            loop.call_soon_threadsafe(updates.put_nowait, update)
+        except RuntimeError:
+            # 应用退出时事件循环可能已关闭；被放弃回收的工作线程不得再报错。
+            pass
+
+    attempt = asyncio.create_task(
+        run_pdf2zh_cli(
+            pdf_path,
+            out_dir,
+            config,
+            target_lang,
+            mode=mode,
+            model=model,
+            progress_callback=_on_progress,
+        )
+    )
+    last_progress = min(max(start_progress, 0.0), 0.95)
+    last_message = ""
+
+    while not attempt.done():
+        waiter = asyncio.create_task(updates.get())
+        done, _ = await asyncio.wait(
+            {attempt, waiter}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if waiter in done:
+            update = waiter.result()
+            mapped = start_progress + update.fraction * (0.95 - start_progress)
+            mapped = min(max(mapped, last_progress), 0.95)
+            if mapped > last_progress or update.message != last_message:
+                last_progress = mapped
+                last_message = update.message
+                yield TranslateProgress(mapped, update.message, mode="pdf2zh")
+        else:
+            waiter.cancel()
+            try:
+                await waiter
+            except asyncio.CancelledError:
+                pass
+
+    # 工作线程最后一次 call_soon_threadsafe 可能与 attempt 完成同时入队；
+    # 让事件循环跑一拍并排空，避免漏掉最后一页/最后阶段进度。
+    await asyncio.sleep(0)
+    while not updates.empty():
+        update = updates.get_nowait()
+        mapped = start_progress + update.fraction * (0.95 - start_progress)
+        mapped = min(max(mapped, last_progress), 0.95)
+        if mapped > last_progress or update.message != last_message:
+            last_progress = mapped
+            last_message = update.message
+            yield TranslateProgress(mapped, update.message, mode="pdf2zh")
+
+    ok, result_path, error = await attempt
+    # 超时后被放弃回收的线程可能仍短暂存活，停止接收它的迟到进度。
+    accept_updates.clear()
+    yield _AttemptResult(ok, result_path, error)
 
 
 # ---------- PDF 修复（不覆盖原文件）----------
@@ -806,14 +945,32 @@ async def translate_pdf_with_fallback(
         ("compatible_skip_subset", "该 PDF 结构较特殊，正在使用兼容模式重试。", 0.35),
     )
     timed_out = False
+    displayed_progress = 0.03
     for mode, msg, prog in attempts:
-        yield TranslateProgress(prog, msg, mode="pdf2zh")
+        attempt_start = max(prog, displayed_progress)
+        displayed_progress = attempt_start
+        yield TranslateProgress(attempt_start, msg, mode="pdf2zh")
         # 每次尝试独立子目录（审计 3.1）：超时被放弃的线程只能写进本次目录，
         # 各尝试产物互不串扰，也免去清理上一次残留的逻辑
         attempt_dir = os.path.join(out_dir, f"attempt-{mode}")
-        ok, result, err = await run_pdf2zh_cli(
-            pdf_path, attempt_dir, config, target_lang, mode=mode, model=model,
-        )
+        outcome: Optional[_AttemptResult] = None
+        async for item in _stream_pdf2zh_attempt(
+            pdf_path,
+            attempt_dir,
+            config,
+            target_lang,
+            mode=mode,
+            model=model,
+            start_progress=attempt_start,
+        ):
+            if isinstance(item, _AttemptResult):
+                outcome = item
+            else:
+                displayed_progress = max(displayed_progress, item.progress)
+                yield item
+        if outcome is None:
+            raise RuntimeError("pdf2zh 尝试未返回结果")
+        ok, result, err = outcome.ok, outcome.result_path, outcome.error
         if ok and result:
             yield TranslateProgress(
                 1.0, "翻译完成", done=True, result_path=result, mode="pdf2zh"
@@ -825,19 +982,39 @@ async def translate_pdf_with_fallback(
 
     # 5-8. 修复 PDF 后重试（超时的情况不修，直接降级）
     if not timed_out:
-        yield TranslateProgress(0.45, "正在生成兼容副本后重试。", mode="pdf2zh")
+        displayed_progress = max(displayed_progress, 0.45)
+        yield TranslateProgress(
+            displayed_progress, "正在生成兼容副本后重试。", mode="pdf2zh"
+        )
         repaired = await asyncio.to_thread(repair_pdf, pdf_path)
         if repaired:
             for mode, msg, prog in (
                 ("skip_subset", "正在用兼容副本重试...", 0.50),
                 ("compatible_skip_subset", "正在用兼容副本重试...", 0.55),
             ):
-                yield TranslateProgress(prog, msg, mode="pdf2zh")
+                attempt_start = max(prog, displayed_progress)
+                displayed_progress = attempt_start
+                yield TranslateProgress(attempt_start, msg, mode="pdf2zh")
                 # 修复副本的尝试同样用独立子目录（与首轮尝试区分开）
                 attempt_dir = os.path.join(out_dir, f"repaired-{mode}")
-                ok, result, err = await run_pdf2zh_cli(
-                    repaired, attempt_dir, config, target_lang, mode=mode, model=model,
-                )
+                outcome = None
+                async for item in _stream_pdf2zh_attempt(
+                    repaired,
+                    attempt_dir,
+                    config,
+                    target_lang,
+                    mode=mode,
+                    model=model,
+                    start_progress=attempt_start,
+                ):
+                    if isinstance(item, _AttemptResult):
+                        outcome = item
+                    else:
+                        displayed_progress = max(displayed_progress, item.progress)
+                        yield item
+                if outcome is None:
+                    raise RuntimeError("pdf2zh 修复副本尝试未返回结果")
+                ok, result, err = outcome.ok, outcome.result_path, outcome.error
                 if ok and result:
                     try:
                         os.remove(repaired)
@@ -857,6 +1034,8 @@ async def translate_pdf_with_fallback(
     async for p in generate_overlay_translation(
         pdf_path, out_dir, config, fallback=True
     ):
+        p.progress = max(displayed_progress, p.progress)
+        displayed_progress = p.progress
         yield p
 
 

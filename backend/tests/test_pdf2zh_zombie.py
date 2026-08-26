@@ -168,7 +168,17 @@ async def test_attempts_use_isolated_out_dirs(monkeypatch, tmp_path):
     """normal/babeldoc/skip_subset/compatible 四次尝试各用独立子目录。"""
     seen: list[tuple[str, str]] = []
 
-    async def fake_run(pdf_path, out_dir, config, target_lang, *, mode, model=None, timeout=1200.0):
+    async def fake_run(
+        pdf_path,
+        out_dir,
+        config,
+        target_lang,
+        *,
+        mode,
+        model=None,
+        timeout=1200.0,
+        progress_callback=None,
+    ):
         seen.append((mode, out_dir))
         return False, None, "fake fail"
 
@@ -201,3 +211,59 @@ async def test_attempts_use_isolated_out_dirs(monkeypatch, tmp_path):
     # 各尝试互不覆盖：目录名应可区分
     assert len({os.path.basename(d) for d in dirs}) == 4
     assert events[-1].done
+
+
+async def test_pdf2zh_page_progress_is_streamed_before_completion(
+    monkeypatch, tmp_path
+):
+    """normal 模式逐页 callback 必须在最终完成前转成单调的服务进度事件。"""
+
+    def fake_translate(callback=None, **kwargs):
+        assert callback is not None
+        assert kwargs["thread"] == 2
+
+        class FakeTqdm:
+            total = 3
+            n = 0
+
+        progress = FakeTqdm()
+        for page in range(1, 4):
+            progress.n = page
+            callback(progress)
+            time.sleep(0.02)
+
+        source_name = os.path.splitext(os.path.basename(kwargs["files"][0]))[0]
+        with open(os.path.join(kwargs["output"], f"{source_name}-mono.pdf"), "wb") as f:
+            f.write(b"%PDF-progress")
+
+    monkeypatch.setattr("pdf2zh.translate", fake_translate)
+    monkeypatch.setattr(pdf_service, "_doclayout_model_cached", lambda: True)
+    monkeypatch.setattr(pdf_service, "_ensure_model", lambda: object())
+
+    pdf = _make_small_pdf(tmp_path)
+    events = [
+        event
+        async for event in pdf_service.translate_pdf_with_fallback(
+            pdf,
+            str(tmp_path / "out"),
+            LLMConfig(
+                api_key="k",
+                base_url="http://x.invalid",
+                model="m",
+                max_concurrency=2,
+            ),
+            "zh",
+        )
+    ]
+
+    page_events = [event for event in events if "正在翻译第" in event.message]
+    assert [event.message for event in page_events] == [
+        "正在翻译第 1/3 页...",
+        "正在翻译第 2/3 页...",
+        "正在翻译第 3/3 页...",
+    ]
+    assert all(0.05 < event.progress < 1.0 for event in page_events)
+    assert [event.progress for event in events] == sorted(
+        event.progress for event in events
+    )
+    assert events[-1].done and events[-1].progress == 1.0

@@ -750,11 +750,43 @@
             "title": "Base Url",
             "type": "string"
           },
+          "max_concurrency": {
+            "default": 1,
+            "description": "同一配置允许同时发出的最大 LLM 请求数",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Concurrency",
+            "type": "integer"
+          },
+          "max_retries": {
+            "default": 5,
+            "description": "收到 HTTP 429 后的最大重试次数",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Max Retries",
+            "type": "integer"
+          },
           "model": {
             "default": "gpt-4o-mini",
             "description": "模型名称",
             "title": "Model",
             "type": "string"
+          },
+          "request_interval_ms": {
+            "default": 1100,
+            "description": "相邻 LLM 请求开始时间的最小间隔（毫秒）",
+            "maximum": 60000.0,
+            "minimum": 0.0,
+            "title": "Request Interval Ms",
+            "type": "integer"
+          },
+          "retry_base_seconds": {
+            "default": 2.0,
+            "description": "HTTP 429 指数退避的初始等待秒数",
+            "maximum": 60.0,
+            "minimum": 0.1,
+            "title": "Retry Base Seconds",
+            "type": "number"
           }
         },
         "required": [
@@ -1754,6 +1786,54 @@
               "title": "X-Llm-Model",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-max-concurrency",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 8,
+              "minimum": 1,
+              "title": "X-Llm-Max-Concurrency",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-request-interval-ms",
+            "required": false,
+            "schema": {
+              "default": 1100,
+              "maximum": 60000,
+              "minimum": 0,
+              "title": "X-Llm-Request-Interval-Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-max-retries",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "X-Llm-Max-Retries",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-retry-base-seconds",
+            "required": false,
+            "schema": {
+              "default": 2.0,
+              "maximum": 60.0,
+              "minimum": 0.1,
+              "title": "X-Llm-Retry-Base-Seconds",
+              "type": "number"
+            }
           }
         ],
         "requestBody": {
@@ -1869,6 +1949,54 @@
               "default": "gpt-4o-mini",
               "title": "X-Llm-Model",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-max-concurrency",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 8,
+              "minimum": 1,
+              "title": "X-Llm-Max-Concurrency",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-request-interval-ms",
+            "required": false,
+            "schema": {
+              "default": 1100,
+              "maximum": 60000,
+              "minimum": 0,
+              "title": "X-Llm-Request-Interval-Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-max-retries",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "X-Llm-Max-Retries",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-retry-base-seconds",
+            "required": false,
+            "schema": {
+              "default": 2.0,
+              "maximum": 60.0,
+              "minimum": 0.1,
+              "title": "X-Llm-Retry-Base-Seconds",
+              "type": "number"
             }
           }
         ],
@@ -2023,6 +2151,54 @@
               "default": "gpt-4o-mini",
               "title": "X-Llm-Model",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-max-concurrency",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 8,
+              "minimum": 1,
+              "title": "X-Llm-Max-Concurrency",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-request-interval-ms",
+            "required": false,
+            "schema": {
+              "default": 1100,
+              "maximum": 60000,
+              "minimum": 0,
+              "title": "X-Llm-Request-Interval-Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-max-retries",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "X-Llm-Max-Retries",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-retry-base-seconds",
+            "required": false,
+            "schema": {
+              "default": 2.0,
+              "maximum": 60.0,
+              "minimum": 0.1,
+              "title": "X-Llm-Retry-Base-Seconds",
+              "type": "number"
             }
           }
         ],

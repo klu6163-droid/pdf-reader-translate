@@ -88,12 +88,16 @@ describe('resolveSummarySettings（总结配置回退到翻译配置）', () => 
   });
 
   it('getSummarySettings 返回回退后的生效配置', () => {
-    useStore.getState().setSettings({ apiKey: 'sk-trans' });
+    useStore.getState().setSettings({
+      apiKey: 'sk-trans',
+      rateLimit: { maxConcurrency: 2, requestIntervalMs: 500 },
+    });
     useStore.getState().setSummarySettings({ model: 'big-model' });
     const eff = useStore.getState().getSummarySettings();
     expect(eff.apiKey).toBe('sk-trans');
     expect(eff.model).toBe('big-model');
     expect(eff.baseUrl).toBe('https://api.openai.com/v1');
+    expect(eff.rateLimit).toEqual({ maxConcurrency: 2, requestIntervalMs: 500 });
   });
 });
 

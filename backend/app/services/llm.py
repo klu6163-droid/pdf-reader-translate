@@ -9,11 +9,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import AsyncGenerator
 
 import httpx
 
 from app.models.schemas import LLMConfig
+from app.services.llm_rate_limit import get_shared_limiter, retry_delay_seconds
+
+
+logger = logging.getLogger("llm")
 
 
 # 抑制幻觉的通用指令，追加到所有 system prompt 后
@@ -44,6 +49,7 @@ class LLMService:
             raise LLMError("未配置 API Key")
         self.config = config
         self._base = config.base_url.rstrip("/")
+        self._limiter = get_shared_limiter(config)
 
     @property
     def _headers(self) -> dict:
@@ -67,11 +73,33 @@ class LLMService:
         }
         url = f"{self._base}/chat/completions"
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            try:
-                resp = await client.post(url, headers=self._headers, json=payload)
-            except httpx.HTTPError as e:
-                # 网络异常/超时等统一包成 LLMError，路由层才能给出可读错误
-                raise LLMError(f"LLM 请求失败（网络或超时）: {e}") from e
+            for attempt in range(self.config.max_retries + 1):
+                try:
+                    async with self._limiter.slot():
+                        resp = await client.post(url, headers=self._headers, json=payload)
+                except httpx.HTTPError as e:
+                    # 网络异常/超时等统一包成 LLMError，路由层才能给出可读错误
+                    raise LLMError(f"LLM 请求失败（网络或超时）: {e}") from e
+                if resp.status_code != 429:
+                    break
+                if attempt >= self.config.max_retries:
+                    raise LLMError(
+                        f"LLM 返回 429（已重试 {self.config.max_retries} 次）: "
+                        f"{resp.text[:200]}"
+                    )
+                delay = retry_delay_seconds(
+                    resp.headers.get("Retry-After"),
+                    attempt,
+                    self.config.retry_base_seconds,
+                )
+                logger.warning(
+                    "LLM 触发 429: model=%s retry=%s/%s wait=%.1fs",
+                    self.config.model,
+                    attempt + 1,
+                    self.config.max_retries,
+                    delay,
+                )
+                await self._limiter.defer(delay)
             if resp.status_code != 200:
                 raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
             try:
@@ -104,29 +132,56 @@ class LLMService:
         url = f"{self._base}/chat/completions"
         try:
             async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-                async with client.stream(
-                    "POST", url, headers=self._headers, json=payload
-                ) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
+                for attempt in range(self.config.max_retries + 1):
+                    retry_after: str | None = None
+                    body_text = ""
+                    async with self._limiter.slot():
+                        async with client.stream(
+                            "POST", url, headers=self._headers, json=payload
+                        ) as resp:
+                            if resp.status_code == 429:
+                                retry_after = resp.headers.get("Retry-After")
+                                body = await resp.aread()
+                                body_text = body.decode("utf-8", "ignore")[:200]
+                            elif resp.status_code != 200:
+                                body = await resp.aread()
+                                raise LLMError(
+                                    f"LLM 返回 {resp.status_code}: "
+                                    f"{body.decode('utf-8', 'ignore')[:200]}"
+                                )
+                            else:
+                                async for line in resp.aiter_lines():
+                                    if not line or not line.startswith("data:"):
+                                        continue
+                                    chunk = line[len("data:"):].strip()
+                                    if chunk == "[DONE]":
+                                        break
+                                    try:
+                                        obj = json.loads(chunk)
+                                        delta = obj["choices"][0]["delta"].get("content")
+                                        if delta:
+                                            yield delta
+                                    except Exception:  # noqa: BLE001
+                                        # 非标端点的畸形行（delta 为 null、choices 非列表等）
+                                        # 一律跳过该行，不能因一行坏数据掐断整个流
+                                        continue
+                                return
+                    if attempt >= self.config.max_retries:
                         raise LLMError(
-                            f"LLM 返回 {resp.status_code}: {body.decode('utf-8', 'ignore')[:200]}"
+                            f"LLM 返回 429（已重试 {self.config.max_retries} 次）: "
+                            f"{body_text}"
                         )
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data:"):
-                            continue
-                        chunk = line[len("data:"):].strip()
-                        if chunk == "[DONE]":
-                            break
-                        try:
-                            obj = json.loads(chunk)
-                            delta = obj["choices"][0]["delta"].get("content")
-                            if delta:
-                                yield delta
-                        except Exception:  # noqa: BLE001
-                            # 非标端点的畸形行（delta 为 null、choices 非列表等）
-                            # 一律跳过该行，不能因一行坏数据掐断整个流
-                            continue
+                    delay = retry_delay_seconds(
+                        retry_after, attempt, self.config.retry_base_seconds
+                    )
+                    logger.warning(
+                        "LLM 流式请求触发 429: model=%s retry=%s/%s wait=%.1fs",
+                        self.config.model,
+                        attempt + 1,
+                        self.config.max_retries,
+                        delay,
+                    )
+                    await self._limiter.defer(delay)
         except httpx.HTTPError as e:
             # 建连失败/流中途断开等网络异常统一包成 LLMError
             raise LLMError(f"LLM 流式请求失败（网络或超时）: {e}") from e

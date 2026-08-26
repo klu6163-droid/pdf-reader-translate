@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useStore, resolveSummarySettings } from '@/store/useSettings';
 import { testSettings } from '@/services/api';
+import { normalizeLLMRateLimit, QWEN_MT_RATE_LIMIT_PRESET } from '@/services/llmConfig';
 
 interface TestResult {
   ok: boolean;
@@ -26,6 +27,11 @@ export default function Settings() {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [model, setModel] = useState(settings.model);
+  const initialRateLimit = normalizeLLMRateLimit(settings.rateLimit);
+  const [maxConcurrency, setMaxConcurrency] = useState(initialRateLimit.maxConcurrency);
+  const [requestIntervalMs, setRequestIntervalMs] = useState(initialRateLimit.requestIntervalMs);
+  const [maxRetries, setMaxRetries] = useState(initialRateLimit.maxRetries);
+  const [retryBaseSeconds, setRetryBaseSeconds] = useState(initialRateLimit.retryBaseSeconds);
 
   // 文献总结配置（本地编辑态；留空 = 复用翻译配置）
   const [summaryApiKey, setSummaryApiKey] = useState(summarySettings.apiKey);
@@ -48,6 +54,11 @@ export default function Settings() {
       setApiKey(settings.apiKey);
       setBaseUrl(settings.baseUrl);
       setModel(settings.model);
+      const rateLimit = normalizeLLMRateLimit(settings.rateLimit);
+      setMaxConcurrency(rateLimit.maxConcurrency);
+      setRequestIntervalMs(rateLimit.requestIntervalMs);
+      setMaxRetries(rateLimit.maxRetries);
+      setRetryBaseSeconds(rateLimit.retryBaseSeconds);
       setSummaryApiKey(summarySettings.apiKey);
       setSummaryBaseUrl(summarySettings.baseUrl);
       setSummaryModel(summarySettings.model);
@@ -59,8 +70,23 @@ export default function Settings() {
 
   if (!settingsOpen) return null;
 
+  const currentRateLimit = () =>
+    normalizeLLMRateLimit({
+      maxConcurrency,
+      requestIntervalMs,
+      maxRetries,
+      retryBaseSeconds,
+    });
+
+  const applyQwenPreset = () => {
+    setMaxConcurrency(QWEN_MT_RATE_LIMIT_PRESET.maxConcurrency);
+    setRequestIntervalMs(QWEN_MT_RATE_LIMIT_PRESET.requestIntervalMs);
+    setMaxRetries(QWEN_MT_RATE_LIMIT_PRESET.maxRetries);
+    setRetryBaseSeconds(QWEN_MT_RATE_LIMIT_PRESET.retryBaseSeconds);
+  };
+
   const save = () => {
-    setSettings({ apiKey, baseUrl, model });
+    setSettings({ apiKey, baseUrl, model, rateLimit: currentRateLimit() });
     setSummarySettings({ apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel });
     setSettingsOpen(false);
   };
@@ -69,7 +95,7 @@ export default function Settings() {
     const session = sessionRef.current;
     setTesting('translate');
     setTranslateResult(null);
-    const res = await testSettings({ apiKey, baseUrl, model });
+    const res = await testSettings({ apiKey, baseUrl, model, rateLimit: currentRateLimit() });
     if (sessionRef.current !== session) return; // 期间弹窗被重新打开，丢弃过期结果
     setTranslateResult(res);
     setTesting(null);
@@ -81,7 +107,7 @@ export default function Settings() {
     setTesting('summary');
     setSummaryResult(null);
     const effective = resolveSummarySettings(
-      { apiKey, baseUrl, model },
+      { apiKey, baseUrl, model, rateLimit: currentRateLimit() },
       { apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel },
     );
     const res = await testSettings(effective);
@@ -141,6 +167,74 @@ export default function Settings() {
                 className="input"
               />
             </Field>
+
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-700">限流与 429 重试</div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    全文翻译使用最大并发；划词、覆盖翻译、术语和总结同时使用请求间隔与退避。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={applyQwenPreset}
+                  className="shrink-0 px-2.5 py-1 text-xs border border-primary-300 text-primary-700 rounded hover:bg-primary-50"
+                >
+                  Qwen-MT 防 429 预设
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="最大并发" hint="1~8">
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={maxConcurrency}
+                    onChange={(e) => setMaxConcurrency(Number(e.target.value))}
+                    className="input"
+                  />
+                </Field>
+                <Field label="请求间隔" hint="毫秒">
+                  <input
+                    type="number"
+                    min={0}
+                    max={60000}
+                    step={100}
+                    value={requestIntervalMs}
+                    onChange={(e) => setRequestIntervalMs(Number(e.target.value))}
+                    className="input"
+                  />
+                </Field>
+                <Field label="429 重试次数" hint="0~10">
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={maxRetries}
+                    onChange={(e) => setMaxRetries(Number(e.target.value))}
+                    className="input"
+                  />
+                </Field>
+                <Field label="退避初始等待" hint="秒">
+                  <input
+                    type="number"
+                    min={0.1}
+                    max={60}
+                    step={0.5}
+                    value={retryBaseSeconds}
+                    onChange={(e) => setRetryBaseSeconds(Number(e.target.value))}
+                    className="input"
+                  />
+                </Field>
+              </div>
+              <p className="text-xs text-slate-500">
+                保守预设：并发 1、间隔 1100ms、最多重试 5 次、初始退避 2 秒。
+              </p>
+            </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -202,7 +296,7 @@ export default function Settings() {
                 disabled={
                   testing !== null ||
                   !resolveSummarySettings(
-                    { apiKey, baseUrl, model },
+                    { apiKey, baseUrl, model, rateLimit: currentRateLimit() },
                     { apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel },
                   ).apiKey
                 }

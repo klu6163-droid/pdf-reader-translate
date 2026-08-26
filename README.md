@@ -59,7 +59,7 @@ Translate/
 
 | 运行时 | 版本 | 说明 |
 |--------|------|------|
-| Node.js | ≥ 18 | 前端构建 |
+| Node.js | ≥ 20.19 | 前端构建（Vite 7 要求） |
 | Python | ≥ 3.10 | 后端 FastAPI |
 | Rust | 1.96.1 | 由根目录 `rust-toolchain.toml` 固定 |
 

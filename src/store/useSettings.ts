@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LLMSettings, PdfTab, RecentFile, HistoryItem, NoteItem } from '@/types';
+import { DEFAULT_LLM_RATE_LIMIT } from '@/services/llmConfig';
 
 const MAX_TABS = 8;
 const MAX_RECENT = 12;
@@ -78,6 +79,7 @@ const DEFAULT_SETTINGS: LLMSettings = {
   apiKey: '',
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o-mini',
+  rateLimit: { ...DEFAULT_LLM_RATE_LIMIT },
 };
 
 // 文献总结独立配置默认全空 = 完全复用翻译配置
@@ -92,10 +94,12 @@ const DEFAULT_SUMMARY_SETTINGS: LLMSettings = {
  * 逐项回退到翻译配置（支持「同一服务商只换模型」到「完全独立两套」的全部场景）。
  */
 export function resolveSummarySettings(translate: LLMSettings, summary: LLMSettings): LLMSettings {
+  const rateLimit = summary.rateLimit ?? translate.rateLimit;
   return {
     apiKey: summary.apiKey.trim() ? summary.apiKey : translate.apiKey,
     baseUrl: summary.baseUrl.trim() ? summary.baseUrl : translate.baseUrl,
     model: summary.model.trim() ? summary.model : translate.model,
+    ...(rateLimit ? { rateLimit } : {}),
   };
 }
 

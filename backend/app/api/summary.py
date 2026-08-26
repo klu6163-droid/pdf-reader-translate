@@ -33,6 +33,14 @@ async def summary_stream(
     api_key: str = Header("", alias="x-llm-api-key"),
     base_url: str = Header("https://api.openai.com/v1", alias="x-llm-base-url"),
     model: str = Header("gpt-4o-mini", alias="x-llm-model"),
+    max_concurrency: int = Header(1, alias="x-llm-max-concurrency", ge=1, le=8),
+    request_interval_ms: int = Header(
+        1100, alias="x-llm-request-interval-ms", ge=0, le=60000
+    ),
+    max_retries: int = Header(5, alias="x-llm-max-retries", ge=0, le=10),
+    retry_base_seconds: float = Header(
+        2.0, alias="x-llm-retry-base-seconds", ge=0.1, le=60.0
+    ),
 ) -> StreamingResponse:
     """一次性接收 PDF，提取全文后流式返回结构化中文总结。"""
     if not api_key:
@@ -57,7 +65,15 @@ async def summary_stream(
             detail="未能从 PDF 提取到文本（可能是扫描件），无法总结",
         )
 
-    config = LLMConfig(api_key=api_key, base_url=base_url, model=model)
+    config = LLMConfig(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        max_concurrency=max_concurrency,
+        request_interval_ms=request_interval_ms,
+        max_retries=max_retries,
+        retry_base_seconds=retry_base_seconds,
+    )
     svc = LLMService(config)
 
     async def event_gen():

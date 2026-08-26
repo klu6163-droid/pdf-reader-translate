@@ -14,6 +14,30 @@ class LLMConfig(BaseModel):
         description="OpenAI-compatible Base URL",
     )
     model: str = Field(default="gpt-4o-mini", description="模型名称")
+    max_concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        description="同一配置允许同时发出的最大 LLM 请求数",
+    )
+    request_interval_ms: int = Field(
+        default=1100,
+        ge=0,
+        le=60000,
+        description="相邻 LLM 请求开始时间的最小间隔（毫秒）",
+    )
+    max_retries: int = Field(
+        default=5,
+        ge=0,
+        le=10,
+        description="收到 HTTP 429 后的最大重试次数",
+    )
+    retry_base_seconds: float = Field(
+        default=2.0,
+        ge=0.1,
+        le=60.0,
+        description="HTTP 429 指数退避的初始等待秒数",
+    )
 
 
 class TextTranslateRequest(BaseModel):

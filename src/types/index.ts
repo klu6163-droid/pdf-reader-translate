@@ -1,9 +1,18 @@
 // 共享类型定义
 
+export interface LLMRateLimitSettings {
+  maxConcurrency: number;
+  requestIntervalMs: number;
+  maxRetries: number;
+  retryBaseSeconds: number;
+}
+
 export interface LLMSettings {
   apiKey: string;
   baseUrl: string;
   model: string;
+  // optional 兼容升级前已写入 localStorage 的三字段配置
+  rateLimit?: Partial<LLMRateLimitSettings>;
 }
 
 export interface TextTranslateResult {

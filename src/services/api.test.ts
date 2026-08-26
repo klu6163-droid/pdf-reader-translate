@@ -5,6 +5,12 @@ const settings = {
   apiKey: 'sk-test-only',
   baseUrl: 'https://upstream.example/private/v1',
   model: 'fake-model',
+  rateLimit: {
+    maxConcurrency: 2,
+    requestIntervalMs: 750,
+    maxRetries: 3,
+    retryBaseSeconds: 1.5,
+  },
 };
 
 afterEach(() => {
@@ -33,6 +39,10 @@ describe('explainTerms backend proxy', () => {
         api_key: settings.apiKey,
         base_url: settings.baseUrl,
         model: settings.model,
+        max_concurrency: 2,
+        request_interval_ms: 750,
+        max_retries: 3,
+        retry_base_seconds: 1.5,
       },
     });
   });
