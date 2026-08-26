@@ -25,6 +25,12 @@ import HelpModal from '@/components/HelpModal';
 import type { AnnotTool } from '@/types';
 import { hasDirtyStash, persistStash, discardDirtyStash } from '@/services/annotStash';
 
+/** Rust 侧 emit 的 backend-status 事件载荷（审计 3.6 崩溃重拉） */
+type BackendStatusEvent =
+  | { state: 'restarting'; attempt: number; max: number }
+  | { state: 'running' }
+  | { state: 'failed'; code: number | null; logPath: string; restartLog: string };
+
 export default function App() {
   const tabs = useStore((s) => s.tabs);
   const activeTabId = useStore((s) => s.activeTabId);
@@ -51,6 +57,19 @@ export default function App() {
 
   // 「查看说明」弹窗
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // 后端崩溃重拉相关（审计 3.6）：
+  // - restartAttempt：Rust 侧正在自动重拉的进度（attempt=0 表示用户手动触发）
+  // - backendFail：自动重拉耗尽 / 手动重启失败时的详情（退出码、日志路径、错误文案）
+  const [restartAttempt, setRestartAttempt] = useState<{ attempt: number; max: number } | null>(
+    null,
+  );
+  const [backendFail, setBackendFail] = useState<{
+    message?: string;
+    code?: number | null;
+    logPath?: string;
+    restartLog?: string;
+  } | null>(null);
 
   // 退出确认：有未保留的批注改动时，关窗前询问是否保留
   const [exitAskOpen, setExitAskOpen] = useState(false);
@@ -103,8 +122,13 @@ export default function App() {
       if (stopped) return;
       if (ok) {
         setBackendStatus('online');
+        setRestartAttempt(null);
+        setBackendFail(null);
         return;
       }
+      // Rust 侧自动重拉 / 手动重启进行中：不降级为 offline（会闪掉「正在重启」提示），
+      // 状态流转交给 backend-status 事件；轮询只负责在恢复时翻回 online
+      if (useStore.getState().backendStatus === 'reconnecting') return;
       const elapsed = Date.now() - startedAt;
       setBackendStatus(elapsed < GRACE_MS ? 'starting' : 'offline');
     };
@@ -116,11 +140,74 @@ export default function App() {
     };
   }, [setBackendStatus]);
 
+  // 监听 Rust 侧后端生命周期事件（审计 3.6）：
+  // restarting → 显示「正在自动重启」；failed → 落回离线卡并给出退出码与日志路径；
+  // running → 后端已恢复（如退避等待期间自己活了），直接翻 online。
+  // 非 Tauri 环境（纯浏览器）没有该通道，退化为仅轮询，行为与之前一致。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const un = await listen<BackendStatusEvent>('backend-status', (e) => {
+          const p = e.payload;
+          if (p.state === 'restarting') {
+            setBackendFail(null);
+            setRestartAttempt({ attempt: p.attempt, max: p.max });
+            setBackendStatus('reconnecting');
+          } else if (p.state === 'running') {
+            setRestartAttempt(null);
+            setBackendFail(null);
+            setBackendStatus('online');
+          } else if (p.state === 'failed') {
+            setRestartAttempt(null);
+            setBackendFail({ code: p.code, logPath: p.logPath, restartLog: p.restartLog });
+            setBackendStatus('offline');
+          }
+        });
+        if (cancelled) un();
+        else unlisten = un;
+      } catch {
+        /* 非 Tauri 环境：无事件通道 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [setBackendStatus]);
+
   // 「重新检测」：立即探测一次后端（用户在状态卡上点击）
   const recheckBackend = useCallback(async () => {
     setBackendStatus('starting');
     const ok = await checkBackend();
-    setBackendStatus(ok ? 'online' : 'offline');
+    if (ok) {
+      setBackendStatus('online');
+      setRestartAttempt(null);
+      setBackendFail(null);
+    } else if (useStore.getState().backendStatus === 'reconnecting') {
+      // 重启进行中：不覆盖为离线
+      setBackendStatus('reconnecting');
+    } else {
+      setBackendStatus('offline');
+    }
+  }, [setBackendStatus]);
+
+  // 「重启后端」：调 Rust 命令强制换新（先杀旧进程再拉起）。
+  // 失败原因（如端口被外部进程占用）写入 backendFail，在离线卡上展示。
+  const restartBackend = useCallback(async () => {
+    setBackendFail(null);
+    setRestartAttempt({ attempt: 0, max: 3 });
+    setBackendStatus('reconnecting');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('restart_backend');
+    } catch (e) {
+      setRestartAttempt(null);
+      setBackendFail({ message: e instanceof Error ? e.message : String(e) });
+      setBackendStatus('offline');
+    }
   }, [setBackendStatus]);
 
   // 以指定工具打开批注器（顶栏「批注」传 select；阅读器底部按钮传对应工具）
@@ -268,6 +355,9 @@ export default function App() {
         status={backendStatus}
         onRecheck={recheckBackend}
         onShowHelp={() => setHelpOpen(true)}
+        onRestart={restartBackend}
+        restartAttempt={restartAttempt}
+        failure={backendFail}
       />
 
       {/* 拖放错误提示条（自动 3 秒消失） */}

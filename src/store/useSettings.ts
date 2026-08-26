@@ -59,9 +59,11 @@ interface AppState {
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
 
-  // 后端连接状态：unknown（未探测过）/ starting（首次启动等待中）/ online / offline
-  backendStatus: 'unknown' | 'starting' | 'online' | 'offline';
-  setBackendStatus: (s: 'unknown' | 'starting' | 'online' | 'offline') => void;
+  // 后端连接状态：
+  //   unknown（未探测过）/ starting（首次启动等待中）/ online / offline
+  //   / reconnecting（后端崩溃后 Tauri 正在自动重启，或用户点了「重启后端」）
+  backendStatus: 'unknown' | 'starting' | 'online' | 'offline' | 'reconnecting';
+  setBackendStatus: (s: 'unknown' | 'starting' | 'online' | 'offline' | 'reconnecting') => void;
 
   // 左右分栏比例（左栏占比，0.2~0.8，默认 0.5）
   splitRatio: number;

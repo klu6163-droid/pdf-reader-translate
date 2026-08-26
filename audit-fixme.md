@@ -134,9 +134,18 @@
   整份 PDF 以 `number[]` JSON 走 IPC：8~16 倍内存放大 + 巨慢序列化（上传上限 200MB）→ 大文件卡死或 OOM。
   方向：Rust 侧 `tauri::ipc::Response`/字节通道传 `Vec<u8>`，或临时文件 + plugin-fs。
 
-- [ ] **3.6 `src-tauri/src/lib.rs:79-82`**
+- [x] **3.6 `src-tauri/src/lib.rs:79-82`**
   后端拉起一次性 fire-and-forget：运行中崩溃无任何重拉路径；发布版无控制台，只能重启整个应用。
   方向：监听子进程退出事件并限次重拉，或前端提供「重启后端」按钮。
+  已修：消费 spawn() 返回的 Receiver 监听 CommandEvent::Terminated（事件驱动，不轮询）；
+  限 3 次重拉、退避 2/4/8s、上一实例存活 ≥60s 才崩则计数器清零；耗尽后 emit 事件，
+  离线卡显示退出码与日志路径（backend.log 崩溃详情 + backend-restart.log 重启轨迹，
+  均在 %LOCALAPPDATA%\PDF Reader Translate\）。新增 restart_backend 命令 + 离线卡「重启后端」
+  按钮，强制换新语义：先按 PID 杀进程树再拉起，不做探活短路（health 200 ≠ 健康）；
+  只杀本应用持有句柄的进程，外部后端返回可读错误。前端新增 'reconnecting' 状态（蓝条显示
+  重启进度），轮询在该状态下不降级为 offline，恢复仍由 /api/health 轮询判定。
+  epoch 机制防止新旧 watcher 各自重拉混战；关窗置 ShuttingDown 标志，退出时不触发重拉。
+  待用户冒烟：杀后端进程看蓝条→变绿；连续崩溃 3 次落黄卡；正常关窗无多余重启。
 
 ---
 
