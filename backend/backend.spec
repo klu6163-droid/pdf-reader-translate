@@ -1,11 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller 打包配置：把 Python 后端打成单一 exe，作为 Tauri sidecar。
+# PyInstaller 打包配置：把 Python 后端打成 onedir 目录，作为 Tauri sidecar。
 #
 # PDF2ZH_EXCLUDE = False（阶段B）：打包 pdf2zh，全文翻译保留排版。
 #   依赖 onnxruntime/cv2/pymupdf/babeldoc 等原生库，体积约 200MB+。
 # PDF2ZH_EXCLUDE = True（阶段A）：排除 pdf2zh，全文翻译走降级覆盖翻译模式，体积约 58MB。
 
 import sys
+from importlib.util import find_spec
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
@@ -29,6 +30,8 @@ extra_datas = []
 extra_hidden = []
 if not PDF2ZH_EXCLUDE:
     for pkg in ["pdf2zh", "babeldoc", "onnxruntime", "cv2", "pymupdf", "fitz"]:
+        if find_spec(pkg) is None:
+            raise RuntimeError(f"[spec] 阶段B缺少必需依赖: {pkg}")
         try:
             d, b, h = collect_all(pkg)
             extra_datas += d
@@ -36,7 +39,7 @@ if not PDF2ZH_EXCLUDE:
             extra_hidden += h
             print(f"[spec] collect_all {pkg}: {len(d)} datas, {len(b)} bins, {len(h)} hidden")
         except Exception as e:
-            print(f"[spec] collect_all {pkg} 失败: {e}")
+            raise RuntimeError(f"[spec] collect_all {pkg} 失败: {e}") from e
 
 a = Analysis(
     ["start.py"],

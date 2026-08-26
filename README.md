@@ -61,15 +61,13 @@ Translate/
 |--------|------|------|
 | Node.js | ≥ 18 | 前端构建 |
 | Python | ≥ 3.10 | 后端 FastAPI |
-| Rust | 最新 stable | Tauri 需要，装 rustup：https://rustup.rs |
+| Rust | 1.96.1 | 由根目录 `rust-toolchain.toml` 固定 |
 
 **各平台额外的系统依赖：**
 
 - **Windows**
   - WebView2 运行时（Win11 自带；Win10 若无需从微软官网装 Evergreen 版）
-  - C 链接器，二选一：
-    - **推荐 MSVC**：装 [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) 勾选「C++ 生成工具」，然后 `rustup default stable-msvc`。对含空格路径更宽容。
-    - **或 GNU 工具链**：`rustup default stable-gnu` + 完整 MinGW-w64（推荐用 [WinLibs](https://winlibs.com/) 或 `winget install BrechtSanders.WinLibs.POSIX.UCRT`，需提供 `gcc/as/dlltool/windres`）。⚠️ 用 GNU 时**项目路径不能含空格**，见文末「常见坑」。
+  - 正式发布固定为 **GNU 工具链**：先运行 `rustup toolchain install 1.96.1-x86_64-pc-windows-gnu --profile minimal` 和 `rustup default 1.96.1-x86_64-pc-windows-gnu`，再安装完整 MinGW-w64（推荐用 [WinLibs](https://winlibs.com/) 或 `winget install BrechtSanders.WinLibs.POSIX.UCRT`，需提供 `gcc/as/dlltool/windres`）。⚠️ 项目路径不能含空格，见文末「常见坑」。
 - **macOS**：`xcode-select --install`（提供 clang）
 - **Linux（Debian/Ubuntu）**：
   ```bash
@@ -93,11 +91,11 @@ pip install -r requirements.txt
 python start.py          # 监听 http://127.0.0.1:8765
 ```
 
-> 想启用「保留排版/公式/图表」的全文翻译，额外安装 pdf2zh：
+> 想启用与正式发布包相同的「保留排版/公式/图表」全文翻译环境，请安装发布锁：
 > ```bash
-> pip install pdf2zh
+> pip install -r requirements-release.txt
 > ```
-> 未安装时，全文翻译会先降级为覆盖翻译；若 PyMuPDF 不可用或找不到可嵌入中文字体，才进一步降级为纯文本译文。界面会显示当前模式。
+> 发布锁包含固定版本的 pdf2zh、PyInstaller 及完整传递依赖；普通开发只装 `requirements.txt` 时仍可不含 pdf2zh。未安装时，全文翻译会先降级为覆盖翻译；若 PyMuPDF 不可用或找不到可嵌入中文字体，才进一步降级为纯文本译文。界面会显示当前模式。
 
 ### 2. 启动前端 / 桌面应用
 
@@ -131,8 +129,22 @@ npm run dev              # 打开 http://localhost:1420
 把 Python 后端用 PyInstaller 打成 onedir 目录（`backend.exe` 启动器 + `_internal/` 依赖），作为 Tauri sidecar 随主程序发布。用户无需安装 Python/Node/Rust，后端启动时也无需像 onefile 模式那样先解压到临时目录。
 
 ### 前置
-- 已装 PyInstaller：`pip install pyinstaller`
-- 已装 Rust + MinGW（见上文前置要求）
+- Python 3.11，建议在项目根目录创建独立发布虚拟环境
+- Rust 1.96.1 GNU + 完整 MinGW-w64（见上文前置要求）
+- Node.js 20，并用 `npm ci` 安装 `package-lock.json` 中的依赖
+
+```powershell
+py -3.11 -m venv .venv-release
+.\.venv-release\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r backend\requirements-release.txt
+python -m pip check
+npm ci
+```
+
+发布锁是独立的完整构建环境，不是 constraints 文件。普通开发继续使用
+`backend/requirements.txt`；正式打包必须使用
+`backend/requirements-release.txt`，其中 pdf2zh 为必装依赖。
 
 应用版本以 `src-tauri/tauri.conf.json` 为唯一来源。修改版本后运行 `npm run version:sync` 同步其余清单；CI 会用 `npm run version:check` 阻止版本漂移。
 
@@ -143,7 +155,21 @@ npm run dist
 ```
 
 `npm run dist` 会调用 `tauri:build`；其 `beforeBuildCommand` 已自动执行前端和后端构建，无需预先手动运行 `npm run build:backend`。安装包输出到：
-`src-tauri/target/release/bundle/nsis/PDF Reader Translate_<版本号>_x64-setup.exe`
+`src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/PDF Reader Translate_<版本号>_x64-setup.exe`
+
+正式构建固定使用 `x86_64-pc-windows-gnu`；构建脚本检测到其他 Rust
+host 会直接失败，避免 CI 产出 MSVC 包而本地产出 GNU 包。生成安装包后可运行：
+
+```powershell
+.\scripts\verify-windows-package.ps1 -BundleDir src-tauri\target\x86_64-pc-windows-gnu\release\bundle\nsis
+```
+
+该脚本静默安装到临时目录，检查 sidecar、`_internal` 和 pdf2zh 原生依赖，
+再启动桌面程序并验证 `/api/health`。
+
+CI 中耗时的 Windows 打包 job 只在 `v*` 版本 tag 或
+`workflow_dispatch` 手动触发时运行；frontend/backend/rust 快速检查仍在普通
+push 和 pull request 上运行。
 
 ### 是否打包 pdf2zh（影响体积与全文翻译能力）
 
@@ -181,13 +207,12 @@ cc1.exe: fatal error: ...: No such file or directory
 windres: preprocessing failed.
 ```
 
-**规避方法（任选其一）：**
-- 把项目放到无空格路径，如 `D:\code\translate`（最简单，推荐）
-- 或改用 MSVC 工具链（安装 VS Build Tools 后 `rustup default stable-msvc`），MSVC 的资源编译器不受空格影响
+**规避方法：**
+- 把项目放到无空格路径，如 `D:\code\translate`
 - 注意：`npm run dev`（纯前端）与后端 `python start.py` 不受此限制，
   仅 `npm run tauri:dev` / `tauri:build`（需编译 Rust）受影响
 
-> 已验证：`cargo check` 在无空格路径下通过（Rust 1.96 GNU 工具链，需完整 MinGW-w64 提供 `as.exe`/`dlltool.exe`/`windres.exe`）。
+> 已验证：Rust 1.96.1 GNU 下 `cargo check --locked`、`cargo test --locked`、NSIS 打包及安装后 `/api/health` 冒烟均通过（需完整 MinGW-w64 提供 `as.exe`/`dlltool.exe`/`windres.exe`）。
 
 ---
 

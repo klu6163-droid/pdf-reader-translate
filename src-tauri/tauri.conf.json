@@ -37,7 +37,6 @@
     ],
     "externalBin": ["binaries/backend"],
     "resources": {
-      "target/release/WebView2Loader.dll": "WebView2Loader.dll",
       "_internal": "_internal"
     }
   },
