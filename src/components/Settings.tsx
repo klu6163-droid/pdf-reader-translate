@@ -13,8 +13,14 @@ interface TestResult {
 }
 
 export default function Settings() {
-  const { settings, setSettings, summarySettings, setSummarySettings, settingsOpen, setSettingsOpen } =
-    useStore();
+  const {
+    settings,
+    setSettings,
+    summarySettings,
+    setSummarySettings,
+    settingsOpen,
+    setSettingsOpen,
+  } = useStore();
 
   // 翻译配置（本地编辑态）
   const [apiKey, setApiKey] = useState(settings.apiKey);
@@ -193,10 +199,13 @@ export default function Settings() {
             <div className="flex items-center gap-2">
               <button
                 onClick={testSummary}
-                disabled={testing !== null || !resolveSummarySettings(
-                  { apiKey, baseUrl, model },
-                  { apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel },
-                ).apiKey}
+                disabled={
+                  testing !== null ||
+                  !resolveSummarySettings(
+                    { apiKey, baseUrl, model },
+                    { apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel },
+                  ).apiKey
+                }
                 className="flex items-center gap-2 px-3 py-1.5 text-sm border rounded hover:bg-slate-50 disabled:opacity-50"
               >
                 {testing === 'summary' && <Loader2 className="animate-spin" size={14} />}

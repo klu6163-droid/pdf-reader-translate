@@ -91,10 +91,7 @@ const DEFAULT_SUMMARY_SETTINGS: LLMSettings = {
  * 计算文献总结实际生效的配置：总结配置中为空的字段，
  * 逐项回退到翻译配置（支持「同一服务商只换模型」到「完全独立两套」的全部场景）。
  */
-export function resolveSummarySettings(
-  translate: LLMSettings,
-  summary: LLMSettings,
-): LLMSettings {
+export function resolveSummarySettings(translate: LLMSettings, summary: LLMSettings): LLMSettings {
   return {
     apiKey: summary.apiKey.trim() ? summary.apiKey : translate.apiKey,
     baseUrl: summary.baseUrl.trim() ? summary.baseUrl : translate.baseUrl,

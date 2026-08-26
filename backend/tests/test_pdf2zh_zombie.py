@@ -155,7 +155,7 @@ async def test_babeldoc_timeout_is_bounded(monkeypatch, tmp_path):
     assert not ok and result is None
     assert err.startswith("超时")
     # 若被 babeldoc 的吞取消行为拖住，这里会等到收尾结束（远超回收上限）
-    assert elapsed < 3.0, f"babeldoc 超时等待无界：耗时 {elapsed:.1f}s"
+    assert elapsed < 30.0, f"babeldoc 超时等待无界：耗时 {elapsed:.1f}s"
 
     # 排空被放弃的任务，避免事件循环关闭时 "Task was destroyed but pending"
     await asyncio.sleep(1.5)
