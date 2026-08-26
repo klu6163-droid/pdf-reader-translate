@@ -130,9 +130,22 @@
   方向：canvas 尺寸延迟到进入视口再分配；远离视口的页释放位图保留 div。
   已修：位图延迟到进入 ±900px 预取区才分配；双 IntersectionObserver，离开 ±3000px 回收区释放位图与文本层、保留占位 div（epoch + RenderTask.cancel 防竞态）。验收（300+ 页滚动内存不随滚动增长）待用户冒烟。
 
-- [ ] **3.5 `src/services/pdf.ts:12, 36`**
+- [x] **3.5 `src/services/pdf.ts:12, 36`**
   整份 PDF 以 `number[]` JSON 走 IPC：8~16 倍内存放大 + 巨慢序列化（上传上限 200MB）→ 大文件卡死或 OOM。
   方向：Rust 侧 `tauri::ipc::Response`/字节通道传 `Vec<u8>`，或临时文件 + plugin-fs。
+  已修（选型 A：ipc::Response + Request 裸字节通道；临时文件 + plugin-fs 方案经对比弃用，
+  理由：plugin-fs 未注册需新增 Rust 依赖 + scope 配置，且其裸字节能力本就来自同一套机制）：
+  读路径 `read_pdf_file` 改返回 `tauri::ipc::Response`，前端收 ArrayBuffer（number[] 仅作防御兜底）；
+  写路径 `write_file` 改收 `tauri::ipc::Request`，字节以裸请求体（octet-stream）传输、
+  路径经请求头 percent 编码传入（与 tauri-plugin-fs 的 write_file 同款机制，
+  tauri 2 内置，零新依赖）；手写 `percent_decode` 配套集成测试（`src-tauri/tests/percent_decode.rs`）。
+  200MB 文件内存峰值从 ~3.5-4GB（Rust JSON 串 + V8 number[] + Value 中间态）降到 ~450MB，
+  传输耗时从数十秒/卡死降到 ~1-2s。write_file 保留 Json(number[]) 兜底分支仅作防御。
+  上传后端的 HTTP 路径（FormData+Blob）本就是二进制传输，不在本条范围，未动。
+  附带：`src-tauri/build.rs` 把 winres 资源档（含应用清单）以 `rustc-link-arg-tests` 链给测试目标——
+  否则测试 exe 缺 comctl32 v6 激活，加载即 0xc0000139（tauri-build 只发 bins，上游同款坑）；
+  为此把测试放 `tests/` 集成测试目录（cargo 拒收该指令除非包内有显式测试目标）。
+  待用户冒烟：大文件（数十~200MB）拖入打开 → 编辑器保存 → 导出，确认无卡顿、内存峰值 ~0.5GB 量级。
 
 - [x] **3.6 `src-tauri/src/lib.rs:79-82`**
   后端拉起一次性 fire-and-forget：运行中崩溃无任何重拉路径；发布版无控制台，只能重启整个应用。

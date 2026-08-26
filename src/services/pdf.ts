@@ -8,9 +8,10 @@ import { save } from '@tauri-apps/plugin-dialog';
 
 /** 通过 Rust command 读取本地 PDF，返回字节。 */
 export async function readPdfFile(path: string): Promise<Uint8Array> {
-  // Rust 返回 Vec<u8> → 前端拿到 number[]
-  const bytes = await invoke<number[]>('read_pdf_file', { path });
-  return new Uint8Array(bytes);
+  // Rust 侧以 tauri::ipc::Response 裸字节通道返回（审计 3.5），正常收到 ArrayBuffer；
+  // number[] 仅作字节通道不可用时的防御兜底
+  const res = await invoke<ArrayBuffer | number[]>('read_pdf_file', { path });
+  return res instanceof ArrayBuffer ? new Uint8Array(res) : Uint8Array.from(res);
 }
 
 /** 从路径中取文件名。 */
@@ -41,13 +42,10 @@ function browserDownload(data: Uint8Array, name: string): void {
  * 写盘失败等真实错误必须抛给调用方显示，否则编辑成果会被无声丢失。
  */
 export async function savePdfFile(data: Uint8Array, suggestedName: string): Promise<string | null> {
-  // 复制一份，避免序列化原 buffer
-  const copy = new Uint8Array(data.length);
-  copy.set(data);
-
   // 非 Tauri 环境（纯浏览器）没有 invoke/save，才降级为浏览器下载
+  // （browserDownload 内部会自行拷贝，避免 data 底层 buffer 直接进 Blob）
   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
-    browserDownload(copy, suggestedName);
+    browserDownload(data, suggestedName);
     return null;
   }
 
@@ -56,8 +54,10 @@ export async function savePdfFile(data: Uint8Array, suggestedName: string): Prom
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
   if (!path) return null; // 用户取消
-  // 写盘失败：不吞异常，抛给调用方显示真实原因
-  await invoke<void>('write_file', { path, data: Array.from(copy) });
+  // 写盘失败：不吞异常，抛给调用方显示真实原因。
+  // 审计 3.5：字节以裸请求体（octet-stream）直传，路径经请求头传入（encodeURIComponent），
+  // 不再走 JSON number[]（200MB 文件会有 8~16 倍内存放大 + 巨慢序列化）
+  await invoke<void>('write_file', data, { headers: { path: encodeURIComponent(path) } });
   return path;
 }
 

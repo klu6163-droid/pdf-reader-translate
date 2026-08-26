@@ -7,11 +7,14 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-/// 读取本地 PDF 文件，返回字节数组。
-/// 前端通过 invoke("read_pdf_file", { path }) 调用。
+/// 读取本地 PDF 文件，以 IPC 裸字节通道（`tauri::ipc::Response`）返回。
+/// 前端通过 invoke("read_pdf_file", { path }) 调用，拿到 ArrayBuffer。
 /// 用 Rust 直接读文件，不依赖 tauri-plugin-fs 的 scope 配置。
+///
+/// 审计 3.5：不走 JSON number[] 返回——大文件（上限 200MB）会有 8~16 倍内存放大
+/// 和巨慢的序列化/反序列化，直接卡死或 OOM。
 #[tauri::command]
-fn read_pdf_file(path: String) -> Result<Vec<u8>, String> {
+fn read_pdf_file(path: String) -> Result<tauri::ipc::Response, String> {
     // 只允许 .pdf 后缀，防止前端传入意外路径
     let p = std::path::Path::new(&path);
     let ext = p
@@ -22,14 +25,27 @@ fn read_pdf_file(path: String) -> Result<Vec<u8>, String> {
     if ext != "pdf" {
         return Err(format!("不支持的文件类型：{ext}，请选择 PDF 文件"));
     }
-    std::fs::read(&path).map_err(|e| format!("读取文件失败：{e}"))
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取文件失败：{e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// 把字节数组写入本地文件（用于导出/另存 PDF）。
-/// 前端通过 invoke("write_file", { path, data }) 调用。
+/// 把字节流写入本地文件（用于导出/另存 PDF）。
+/// 前端通过 invoke("write_file", bytes, { headers: { path } }) 调用：
+/// 字节以裸请求体（application/octet-stream）传输，目标路径经请求头传入
+/// （encodeURIComponent 编码），与 tauri-plugin-fs 的 write_file 同款机制。
 /// 只允许 .pdf 后缀，与 read_pdf_file 对称。
+///
+/// 审计 3.5：原实现 data: Vec<u8> 走 JSON number[]，200MB 文件会产生
+/// 数百 MB JSON 文本 + serde_json::Value 中间态，直接卡死或 OOM。
 #[tauri::command]
-fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
+fn write_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let path = request
+        .headers()
+        .get("path")
+        .ok_or_else(|| "缺少保存路径（path 请求头）".to_string())
+        .and_then(|v| v.to_str().map_err(|_| "保存路径不是合法字符串".to_string()))
+        .and_then(percent_decode)?;
+
     let p = std::path::Path::new(&path);
     let ext = p
         .extension()
@@ -39,7 +55,51 @@ fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
     if ext != "pdf" {
         return Err(format!("不支持的文件类型：{ext}，仅支持保存 PDF"));
     }
-    std::fs::write(&path, &data).map_err(|e| format!("写入文件失败：{e}"))
+
+    let data: std::borrow::Cow<'_, [u8]> = match request.body() {
+        // 正常路径：裸字节请求体，零 JSON 开销
+        tauri::ipc::InvokeBody::Raw(data) => std::borrow::Cow::Borrowed(data),
+        // 防御兜底：异常传输以 JSON number[] 传字节（正常前端不会走到这里）
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(arr)) => {
+            std::borrow::Cow::Owned(
+                arr.iter()
+                    .flat_map(|v| v.as_number().and_then(|v| v.as_u64().map(|v| v as u8)))
+                    .collect(),
+            )
+        }
+        _ => return Err("不支持的请求体：仅接受字节流".to_string()),
+    };
+
+    std::fs::write(&p, &data).map_err(|e| format!("写入文件失败：{e}"))
+}
+
+/// 解码 encodeURIComponent 编码的字符串（用于 write_file 的 path 请求头）。
+/// 手写而不用 percent-encoding crate：只需处理 %XX 十六进制转义与
+/// 原样 ASCII 字符，解码结果按 UTF-8 校验。
+/// pub 仅为集成测试可见（见 tests/percent_decode.rs）。
+pub fn percent_decode(input: &str) -> Result<String, String> {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return Err("保存路径含不完整的 % 转义".to_string());
+            }
+            match (
+                (bytes[i + 1] as char).to_digit(16),
+                (bytes[i + 2] as char).to_digit(16),
+            ) {
+                (Some(h), Some(l)) => out.push((h * 16 + l) as u8),
+                _ => return Err("保存路径含非法的 % 转义".to_string()),
+            }
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).map_err(|_| "保存路径不是合法 UTF-8".to_string())
 }
 
 /// 手动重启后端（前端离线卡片的「重启后端」按钮）。
