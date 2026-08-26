@@ -157,10 +157,13 @@ export default function AnnotPage({
   };
 
   const onCapturePointerMove = (e: React.PointerEvent) => {
-    if (!draft) return;
     const [x, y] = toLocal(e);
-    if (draft.kind === 'rect') setDraft({ ...draft, x1: x, y1: y });
-    else setDraft({ kind: 'ink', points: [...draft.points, [x, y]] });
+    // 指针 move 频率可高于渲染；必须从最新 draft 追加，不能捕获旧闭包。
+    setDraft((current) => {
+      if (!current) return null;
+      if (current.kind === 'rect') return { ...current, x1: x, y1: y };
+      return { kind: 'ink', points: [...current.points, [x, y]] };
+    });
   };
 
   const onCapturePointerUp = () => {

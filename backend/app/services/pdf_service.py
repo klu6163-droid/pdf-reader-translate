@@ -626,6 +626,8 @@ async def generate_overlay_translation(
     pdf_path: str,
     out_dir: str,
     config: LLMConfig,
+    *,
+    fallback: bool = False,
 ) -> AsyncGenerator[TranslateProgress, None]:
     """覆盖译文 PDF：保留原页面图像/figure，只覆盖可识别文本块。
 
@@ -636,20 +638,30 @@ async def generate_overlay_translation(
     只会被串行访问（PyMuPDF 禁止同一文档跨线程并发使用，串行是允许的）；
     不要在本生成器内并发操作同一 doc。
     """
-    yield TranslateProgress(0.65, "切换为覆盖翻译模式...", mode="fallback")
+    progress_base = 0.65 if fallback else 0.0
+    progress_span = 0.33 if fallback else 0.98
+    yield TranslateProgress(
+        progress_base,
+        "切换为覆盖翻译模式..." if fallback else "正在准备覆盖翻译...",
+        mode="fallback",
+    )
 
     try:
         fitz = await asyncio.to_thread(_import_fitz)
     except Exception as e:  # noqa: BLE001
         _logger.info("PyMuPDF 不可用，改为纯文本译文模式: %s", e)
-        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+        async for p in generate_text_only_translation(
+            pdf_path, out_dir, config, fallback=fallback
+        ):
             yield p
         return
 
     font_path = _overlay_font_path()
     if not font_path:
         _logger.info("未找到可嵌入中文字体，改为纯文本译文模式")
-        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+        async for p in generate_text_only_translation(
+            pdf_path, out_dir, config, fallback=fallback
+        ):
             yield p
         return
 
@@ -677,7 +689,7 @@ async def generate_overlay_translation(
                 _draw_overlay_page_blocks, page, blocks, translations, font_name
             )
             yield TranslateProgress(
-                0.65 + (i + 1) / total * 0.33,
+                progress_base + (i + 1) / total * progress_span,
                 f"覆盖翻译第 {i + 1}/{total} 页...",
                 mode="fallback",
             )
@@ -692,7 +704,11 @@ async def generate_overlay_translation(
 
     yield TranslateProgress(
         1.0,
-        "完整排版翻译失败，已切换为覆盖翻译模式（figure 保留原样）",
+        (
+            "完整排版翻译失败，已切换为覆盖翻译模式（figure 保留原样）"
+            if fallback
+            else "覆盖翻译完成（figure 保留原样）"
+        ),
         done=True,
         result_path=result_path,
         mode="fallback",
@@ -704,6 +720,8 @@ async def generate_text_only_translation(
     pdf_path: str,
     out_dir: str,
     config: LLMConfig,
+    *,
+    fallback: bool = True,
 ) -> AsyncGenerator[TranslateProgress, None]:
     """纯文本译文 PDF：左侧原 PDF + 右侧按页译文。
 
@@ -712,7 +730,13 @@ async def generate_text_only_translation(
     全文抽取与 reportlab 写盘均为同步重活，必须经 asyncio.to_thread 下放
     工作线程，否则事件循环被独占（/api/health 无响应 → 前端误判「离线」）。
     """
-    yield TranslateProgress(0.65, "切换为纯文本译文模式...", mode="fallback")
+    progress_base = 0.65 if fallback else 0.0
+    progress_span = 0.33 if fallback else 0.98
+    yield TranslateProgress(
+        progress_base,
+        "切换为纯文本译文模式..." if fallback else "正在生成文本译文...",
+        mode="fallback",
+    )
 
     pages = await asyncio.to_thread(extract_text_per_page, pdf_path)
     total = len(pages) or 1
@@ -729,7 +753,7 @@ async def generate_text_only_translation(
             zh = "[本页无可提取文本，可能是扫描图片]"
         translated_pages.append(zh)
         yield TranslateProgress(
-            0.65 + (i + 1) / total * 0.33,
+            progress_base + (i + 1) / total * progress_span,
             f"翻译第 {i + 1}/{total} 页...",
             mode="fallback",
         )
@@ -741,7 +765,9 @@ async def generate_text_only_translation(
 
     yield TranslateProgress(
         1.0,
-        "完整排版翻译失败，已切换为右侧译文阅读模式",
+        "完整排版翻译失败，已切换为右侧译文阅读模式"
+        if fallback
+        else "文本译文生成完成",
         done=True,
         result_path=result_path,
         mode="fallback",
@@ -766,7 +792,9 @@ async def translate_pdf_with_fallback(
         model = await asyncio.to_thread(_ensure_model)
     except Exception as e:  # noqa: BLE001
         _logger.warning("模型加载失败，直接覆盖翻译: %s", e)
-        async for p in generate_overlay_translation(pdf_path, out_dir, config):
+        async for p in generate_overlay_translation(
+            pdf_path, out_dir, config, fallback=True
+        ):
             yield p
         return
 
@@ -826,7 +854,9 @@ async def translate_pdf_with_fallback(
                 pass
 
     # 9. 全失败 → 覆盖翻译模式
-    async for p in generate_overlay_translation(pdf_path, out_dir, config):
+    async for p in generate_overlay_translation(
+        pdf_path, out_dir, config, fallback=True
+    ):
         yield p
 
 
@@ -843,7 +873,9 @@ async def translate_pdf(
         async for p in translate_pdf_with_fallback(pdf_path, out_dir, config, target_lang):
             yield p
     else:
-        async for p in generate_overlay_translation(pdf_path, out_dir, config):
+        async for p in generate_overlay_translation(
+            pdf_path, out_dir, config, fallback=True
+        ):
             yield p
 
 

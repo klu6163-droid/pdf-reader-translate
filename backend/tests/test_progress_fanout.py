@@ -50,7 +50,7 @@ def fake_generators(monkeypatch):
             result_path=out_dir + "/fake.pdf",
         )
 
-    async def fake_overlay(upload_path, out_dir, config):
+    async def fake_overlay(upload_path, out_dir, config, *, fallback=False):
         async for prog in fake_translate(upload_path, out_dir, config, "zh"):
             yield prog
 

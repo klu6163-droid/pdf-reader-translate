@@ -172,7 +172,7 @@ async def test_attempts_use_isolated_out_dirs(monkeypatch, tmp_path):
         seen.append((mode, out_dir))
         return False, None, "fake fail"
 
-    async def fake_overlay(pdf_path, out_dir, config):
+    async def fake_overlay(pdf_path, out_dir, config, *, fallback=False):
         yield pdf_service.TranslateProgress(
             1.0, "done", done=True, result_path="x.pdf", mode="fallback"
         )

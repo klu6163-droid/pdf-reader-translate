@@ -105,7 +105,7 @@
   加载途中卸载时 `if (cancelled) return` 直接返回，拿到的 doc 未 destroy() → pdf.js 文档 + worker 泄漏。
   修复：`if (cancelled) { doc.destroy(); return; }`。
 
-- [ ] **2.13 `backend/app/api/summary.py:46`【3.3 期间发现】**
+- [x] **2.13 `backend/app/api/summary.py:46`【3.3 期间发现】**
   async 路由里直接同步调 `pdf_service.extract_text()` 全文抽取：大 PDF 阻塞事件循环数秒 → 期间 /api/health 无法响应、其他请求卡死（与 3.3 同类，但位于路由层而非翻译生成器）。
   修复：`await asyncio.to_thread(pdf_service.extract_text, tmp_path)`（与 3.3 同一模式）。
 
@@ -202,14 +202,14 @@
 
 ## 批次 4：代码味道（8 条，隐患清完稳定运行后再处理）
 
-- [ ] **4.1 `backend/app/api/pdf_edit.py:43-45, 58-64`** — _edit_dir 缺 isalnum() 校验（非法 edit_id 应 400 而非 500）；analyze 失败残留上传目录。修复：复用 pdf_annot._work 的校验；失败路径 remove_path。
-- [ ] **4.2 `src/components/PdfAnnotator/index.tsx:312`** — 会话失效重试依赖错误文案正则 `/会话|重新打开|404/`，后端改文案即静默失效。修复：按 HTTP 状态码 404 判断。
-- [ ] **4.3 `src/components/PdfAnnotator/AnnotPage.tsx:128`** — 渲染 effect 依赖内联 reportHasText，父组件重渲染取消重启进行中的页渲染。修复：useCallback 稳定化或移出依赖。
-- [ ] **4.4 `src/components/PdfAnnotator/AnnotPage.tsx:160`**【需运行时验证】— 画笔 move 用渲染闭包里的旧 draft 追加点，高刷快速划动可能丢点。修复：函数式 `setDraft(d => …)`。
-- [ ] **4.5 `src/services/annotStash.ts:71-76`** — docKey 对整份 PDF 多做一次全量拷贝（bytes.slice(0)），大文件多上百 MB。修复：digest 直接接收原数组（只读用途）。
-- [ ] **4.6 `src/App.tsx:168-170, 466-471`** — 多文件拖入提示被成功路径 `setDropError('')` 立即清空；DropErrorBanner 的 onDismiss 内联导致 3 秒计时反复重置。修复：成功路径仅在无提示时清空；onDismiss 用 useCallback。
-- [ ] **4.7 `src/components/PDFViewer.tsx:418, 403-405`** — 页码输入框 onBlur 无条件跳转；导出失败只 console.error。修复：仅回车/失焦且值变化时跳转；失败给 toast。
-- [ ] **4.8 `backend/app/services/pdf_service.py:539`** — 独立「生成译文 PDF」也走 generate_overlay_translation，首条进度从 0.65 起、文案是「切换为覆盖翻译模式」。修复：入口区分，独立任务从 0 报进度、用中性文案。
+- [x] **4.1 `backend/app/api/pdf_edit.py:43-45, 58-64`** — _edit_dir 缺 isalnum() 校验（非法 edit_id 应 400 而非 500）；analyze 失败残留上传目录。修复：复用 pdf_annot._work 的校验；失败路径 remove_path。
+- [x] **4.2 `src/components/PdfAnnotator/index.tsx:312`** — 会话失效重试依赖错误文案正则 `/会话|重新打开|404/`，后端改文案即静默失效。修复：按 HTTP 状态码 404 判断。
+- [x] **4.3 `src/components/PdfAnnotator/AnnotPage.tsx:128`** — 渲染 effect 依赖内联 reportHasText，父组件重渲染取消重启进行中的页渲染。修复：useCallback 稳定化或移出依赖。
+- [x] **4.4 `src/components/PdfAnnotator/AnnotPage.tsx:160`**【需运行时验证】— 画笔 move 用渲染闭包里的旧 draft 追加点，高刷快速划动可能丢点。修复：函数式 `setDraft(d => …)`。
+- [x] **4.5 `src/services/annotStash.ts:71-76`** — docKey 对整份 PDF 多做一次全量拷贝（bytes.slice(0)），大文件多上百 MB。修复：digest 直接接收原数组（只读用途）。
+- [x] **4.6 `src/App.tsx:168-170, 466-471`** — 多文件拖入提示被成功路径 `setDropError('')` 立即清空；DropErrorBanner 的 onDismiss 内联导致 3 秒计时反复重置。修复：成功路径仅在无提示时清空；onDismiss 用 useCallback。
+- [x] **4.7 `src/components/PDFViewer.tsx:418, 403-405`** — 页码输入框 onBlur 无条件跳转；导出失败只 console.error。修复：仅回车/失焦且值变化时跳转；失败给 toast。
+- [x] **4.8 `backend/app/services/pdf_service.py:539`** — 独立「生成译文 PDF」也走 generate_overlay_translation，首条进度从 0.65 起、文案是「切换为覆盖翻译模式」。修复：入口区分，独立任务从 0 报进度、用中性文案。
 
 ---
 

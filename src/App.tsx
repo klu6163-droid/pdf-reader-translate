@@ -48,6 +48,7 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false);
   const [dropError, setDropError] = useState('');
   const recentDropRef = useRef<{ path: string; at: number } | null>(null);
+  const dismissDropError = useCallback(() => setDropError(''), []);
 
   // PDF 编辑器 / 批注器浮层开关
   const [editorOpen, setEditorOpen] = useState(false);
@@ -218,7 +219,7 @@ export default function App() {
 
   // 从本地路径加载 PDF 为新标签（打开按钮与拖放共用）
   const loadFromPath = useCallback(
-    async (path: string) => {
+    async (path: string, keepDropNotice = false) => {
       try {
         const normalizedPath = path.toLowerCase();
         const now = Date.now();
@@ -231,7 +232,9 @@ export default function App() {
         const bytes = await readPdfFile(path);
         const id = addTab(bytes, basename(path));
         if (id) addRecentFile(path, basename(path));
-        setDropError(id ? '' : '最多同时打开 8 个标签页');
+        if (!id) setDropError('最多同时打开 8 个标签页');
+        // 多文件拖入已有「仅打开第一个」提示时，成功不能把它立即清掉。
+        else if (!keepDropNotice) setDropError('');
       } catch (e) {
         setDropError(e instanceof Error ? e.message : '打开 PDF 失败');
       }
@@ -254,7 +257,7 @@ export default function App() {
         if (pdfs.length > 1) {
           setDropError('检测到多个文件，仅打开第一个 PDF');
         }
-        loadFromPath(pdfs[0]);
+        loadFromPath(pdfs[0], pdfs.length > 1);
       },
     }).then((fn) => (unlisten = fn));
     return () => unlisten?.();
@@ -361,7 +364,7 @@ export default function App() {
       />
 
       {/* 拖放错误提示条（自动 3 秒消失） */}
-      {dropError && <DropErrorBanner message={dropError} onDismiss={() => setDropError('')} />}
+      {dropError && <DropErrorBanner message={dropError} onDismiss={dismissDropError} />}
 
       {/* 主体：左右分栏（可拖拽调整比例） */}
       <div className="flex flex-1 min-h-0">

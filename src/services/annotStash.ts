@@ -70,7 +70,8 @@ export function discardDirtyStash(): void {
 /** 计算 PDF 内容指纹。优先 SHA-256；环境不支持时退化为采样 FNV-1a。 */
 export async function docKey(bytes: Uint8Array): Promise<string> {
   try {
-    const digest = await crypto.subtle.digest('SHA-256', bytes.slice(0));
+    // digest 仅读取输入；不要为整份 PDF 再复制一次。
+    const digest = await crypto.subtle.digest('SHA-256', bytes as unknown as BufferSource);
     return Array.from(new Uint8Array(digest))
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');

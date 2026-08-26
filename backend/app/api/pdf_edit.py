@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.services import pdf_edit_service
-from app.services.file_utils import cleanup_old_entries, scoped_path
+from app.services.file_utils import cleanup_old_entries, remove_path, scoped_path
 
 router = APIRouter(prefix="/api/edit/pdf", tags=["pdf-edit"])
 
@@ -41,7 +41,10 @@ class SaveEditsRequest(BaseModel):
 
 
 def _edit_dir(edit_id: str) -> str:
-    # scoped_path 会校验不越界；edit_id 只应是我们生成的 hex
+    # scoped_path 会校验不越界；edit_id 只应是我们生成的 hex。
+    # 先拒绝非法值，避免把无效会话 ID 变成 500。
+    if not edit_id.isalnum():
+        raise HTTPException(status_code=400, detail="非法会话 ID")
     return scoped_path(EDIT_WORK_DIR, edit_id)
 
 
@@ -56,11 +59,13 @@ async def analyze(file: UploadFile = File(...)) -> dict:
         with open(source, "wb") as f:
             f.write(await file.read())
     except Exception as e:  # noqa: BLE001
+        remove_path(work)
         raise HTTPException(status_code=400, detail=f"保存上传文件失败：{e}")
 
     try:
         result = await asyncio.to_thread(pdf_edit_service.analyze_pdf, source)
     except Exception as e:  # noqa: BLE001
+        remove_path(work)
         raise HTTPException(status_code=400, detail=str(e))
 
     result["edit_id"] = edit_id

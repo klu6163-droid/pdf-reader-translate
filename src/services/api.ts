@@ -30,6 +30,17 @@ export class TimeoutError extends Error {
   }
 }
 
+/** 保留非成功响应的状态码，供需要按语义重试的调用方判断。 */
+class HttpStatusError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'HttpStatusError';
+    this.status = status;
+  }
+}
+
 /**
  * 统一 fetch 封装：
  * - 带超时（AbortController），避免请求永久挂起
@@ -437,14 +448,14 @@ export async function savePdfAnnots(
     },
     120,
   );
-  if (!resp.ok) throw new Error(await safeDetail(resp));
+  if (!resp.ok) throw new HttpStatusError(resp.status, await safeDetail(resp));
   return resp.json();
 }
 
 /** 拉取批注后的新 PDF 字节。 */
 export async function annotatedPdfBytes(annotId: string): Promise<Uint8Array> {
   const resp = await apiFetch(`/api/annot/pdf/${annotId}/result`, {}, 60);
-  if (!resp.ok) throw new Error(await safeDetail(resp));
+  if (!resp.ok) throw new HttpStatusError(resp.status, await safeDetail(resp));
   return new Uint8Array(await resp.arrayBuffer());
 }
 

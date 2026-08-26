@@ -75,6 +75,11 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const hasTextRef = useRef<boolean | null>(null); // null=未知（尚未渲染任何页）
   const stashKeyRef = useRef<string | null>(null); // 文档指纹（暂存 key）
+  // 供每页渲染 effect 调用；保持引用稳定，避免父组件重渲染取消并重启在途渲染。
+  const reportHasText = useCallback((has: boolean) => {
+    if (has) hasTextRef.current = true;
+    else if (hasTextRef.current === null) hasTextRef.current = false;
+  }, []);
 
   // ---- 建立批注会话（导入 PDF 已有批注；有暂存则恢复暂存）----
   useEffect(() => {
@@ -320,8 +325,11 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
         result = await doSave(id);
       } catch (e) {
         // 会话失效（后端重启/清理）→ 重开会话再试一次
-        const msg = errMsg(e);
-        if (!/会话|重新打开|404/.test(msg)) throw e;
+        const status =
+          typeof e === 'object' && e !== null && 'status' in e
+            ? (e as { status?: unknown }).status
+            : undefined;
+        if (status !== 404) throw e;
         const reopened = await openPdfAnnot(bytesToPdfBlob(data), name);
         id = reopened.annot_id;
         setAnnotId(id);
@@ -446,10 +454,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
                     if (el) pageElsRef.current.set(pg.page, el);
                     else pageElsRef.current.delete(pg.page);
                   }}
-                  reportHasText={(has) => {
-                    if (has) hasTextRef.current = true;
-                    else if (hasTextRef.current === null) hasTextRef.current = false;
-                  }}
+                  reportHasText={reportHasText}
                 />
               ))}
             </div>

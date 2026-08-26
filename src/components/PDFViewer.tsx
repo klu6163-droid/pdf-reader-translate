@@ -67,6 +67,7 @@ export default function PDFViewer({
   // 页 → 纪元号：每次渲染/回收递增，令已越过回收点的在途异步流程失效
   const pageEpochRef = useRef<Map<number, number>>(new Map());
   const currentPageRef = useRef(currentPage);
+  const committedPageRef = useRef(currentPage);
   // 译文是否跟随原文翻页（ref 形式供 buildPages 读取，避免把它加进 build 依赖触发重建）
   const syncPageRef = useRef(syncPage !== false);
   // 搜索：缓存各页文本，避免重复抓取
@@ -84,6 +85,7 @@ export default function PDFViewer({
   const [searching, setSearching] = useState(false);
   // 页码跳转输入
   const [pageInput, setPageInput] = useState(String(currentPage));
+  const [exportError, setExportError] = useState('');
 
   const backendOnline = useStore((s) => s.backendStatus) === 'online';
 
@@ -91,6 +93,7 @@ export default function PDFViewer({
 
   useEffect(() => {
     currentPageRef.current = currentPage;
+    committedPageRef.current = currentPage;
   }, [currentPage]);
 
   useEffect(() => {
@@ -101,6 +104,13 @@ export default function PDFViewer({
   useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
+
+  // 导出失败提示为短暂 toast，不让导出问题遮住当前 PDF。
+  useEffect(() => {
+    if (!exportError) return;
+    const timer = window.setTimeout(() => setExportError(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [exportError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -384,6 +394,18 @@ export default function PDFViewer({
     [numPages, onPageChange],
   );
 
+  const commitPageInput = useCallback(() => {
+    const requested = Number(pageInput) || 1;
+    const page = Math.max(1, Math.min(numPages || 1, requested));
+    if (page === committedPageRef.current) {
+      setPageInput(String(page));
+      return;
+    }
+    committedPageRef.current = page;
+    setPageInput(String(page));
+    jumpToPage(page);
+  }, [jumpToPage, numPages, pageInput]);
+
   // 适合宽度：按容器宽与第 1 页原始宽计算缩放
   const fitWidth = useCallback(async () => {
     const doc = pdfRef.current;
@@ -478,7 +500,7 @@ export default function PDFViewer({
       }
       await savePdfFile(bytes, name);
     } catch (e) {
-      console.error('导出失败:', e);
+      setExportError(`导出失败：${e instanceof Error ? e.message : '请重试'}`);
     }
   }, [data, suggestedName]);
 
@@ -490,9 +512,9 @@ export default function PDFViewer({
           value={pageInput}
           onChange={(e) => setPageInput(e.target.value.replace(/[^\d]/g, ''))}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') jumpToPage(Number(pageInput) || 1);
+            if (e.key === 'Enter') commitPageInput();
           }}
-          onBlur={() => jumpToPage(Number(pageInput) || 1)}
+          onBlur={commitPageInput}
           className="w-10 px-1 py-0.5 text-center border border-slate-200 rounded text-xs"
           title="跳转到页码（回车）"
         />
@@ -553,6 +575,22 @@ export default function PDFViewer({
       </div>
 
       <div className="flex-1 relative overflow-hidden">
+        {exportError && (
+          <div
+            role="alert"
+            className="absolute top-3 right-3 z-20 flex items-center gap-2 max-w-sm rounded bg-red-600 px-3 py-2 text-sm text-white shadow-lg"
+          >
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{exportError}</span>
+            <button
+              onClick={() => setExportError('')}
+              className="ml-1 opacity-80 hover:opacity-100"
+              aria-label="关闭导出失败提示"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {loadError && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100 text-center p-6">
             <AlertCircle size={40} className="text-red-400" strokeWidth={1.5} />
