@@ -530,16 +530,43 @@ def _draw_overlay_text(page, rect, text: str, font_name: str) -> None:
         page.draw_rect(bg, color=None, fill=(1, 1, 1), fill_opacity=0.96, overlay=True)
 
 
+def _draw_overlay_page_blocks(
+    page, blocks: list, translations: list[str], font_name: str
+) -> None:
+    """在一页上绘制全部译文块（同步重活，由调用方放进工作线程执行）。"""
+    for (rect, _), zh in zip(blocks, translations):
+        if zh.strip():
+            _draw_overlay_text(page, rect, zh.strip(), font_name)
+
+
+def _import_fitz():
+    """导入 PyMuPDF 并返回模块。
+
+    冻结打包后首次导入可达 1~2s，放进工作线程避免阻塞事件循环。
+    """
+    import fitz
+
+    return fitz
+
+
 async def generate_overlay_translation(
     pdf_path: str,
     out_dir: str,
     config: LLMConfig,
 ) -> AsyncGenerator[TranslateProgress, None]:
-    """覆盖译文 PDF：保留原页面图像/figure，只覆盖可识别文本块。"""
+    """覆盖译文 PDF：保留原页面图像/figure，只覆盖可识别文本块。
+
+    所有同步重调用（fitz 导入/解析/逐页提取/字体注册/绘制/子集化/保存）一律
+    `await asyncio.to_thread(...)` 下放工作线程，否则事件循环被长时间独占，
+    /api/health 无法响应，前端会把后端误判为「离线」。
+    线程安全说明：每次 to_thread 都 await 完成后才有下一次，同一 fitz Document
+    只会被串行访问（PyMuPDF 禁止同一文档跨线程并发使用，串行是允许的）；
+    不要在本生成器内并发操作同一 doc。
+    """
     yield TranslateProgress(0.65, "切换为覆盖翻译模式...", mode="fallback")
 
     try:
-        import fitz
+        fitz = await asyncio.to_thread(_import_fitz)
     except Exception as e:  # noqa: BLE001
         _logger.info("PyMuPDF 不可用，改为纯文本译文模式: %s", e)
         async for p in generate_text_only_translation(pdf_path, out_dir, config):
@@ -557,23 +584,25 @@ async def generate_overlay_translation(
     base = os.path.splitext(os.path.basename(pdf_path))[0]
     result_path = os.path.join(out_dir, f"{base}-zh.pdf")
     svc = LLMService(config)
-    doc = fitz.open(pdf_path)
+    doc = await asyncio.to_thread(fitz.open, pdf_path)
     total = max(len(doc), 1)
     font_name = "AppOverlayCJK"
 
     try:
         for i, page in enumerate(doc):
-            blocks = _page_text_blocks(page)
+            blocks = await asyncio.to_thread(_page_text_blocks, page)
             texts = [text for _, text in blocks]
             translations = await _translate_overlay_blocks(svc, texts)
             try:
-                page.insert_font(fontname=font_name, fontfile=font_path)
+                await asyncio.to_thread(
+                    page.insert_font, fontname=font_name, fontfile=font_path
+                )
             except Exception as e:  # noqa: BLE001
                 _logger.info("注册覆盖字体失败: %s", e)
                 raise
-            for (rect, _), zh in zip(blocks, translations):
-                if zh.strip():
-                    _draw_overlay_text(page, rect, zh.strip(), font_name)
+            await asyncio.to_thread(
+                _draw_overlay_page_blocks, page, blocks, translations, font_name
+            )
             yield TranslateProgress(
                 0.65 + (i + 1) / total * 0.33,
                 f"覆盖翻译第 {i + 1}/{total} 页...",
@@ -581,10 +610,10 @@ async def generate_overlay_translation(
             )
 
         try:
-            doc.subset_fonts()
+            await asyncio.to_thread(doc.subset_fonts)
         except Exception as e:  # noqa: BLE001
             _logger.info("覆盖译文 PDF 字体子集化失败，继续保存: %s", e)
-        doc.save(result_path, garbage=4, deflate=True)
+        await asyncio.to_thread(doc.save, result_path, garbage=4, deflate=True)
     finally:
         doc.close()
 
@@ -606,10 +635,13 @@ async def generate_text_only_translation(
     """纯文本译文 PDF：左侧原 PDF + 右侧按页译文。
 
     不保留排版/公式/图表，仅供快速阅读。所有 pdf2zh 路线都失败时启用。
+
+    全文抽取与 reportlab 写盘均为同步重活，必须经 asyncio.to_thread 下放
+    工作线程，否则事件循环被独占（/api/health 无响应 → 前端误判「离线」）。
     """
     yield TranslateProgress(0.65, "切换为纯文本译文模式...", mode="fallback")
 
-    pages = extract_text_per_page(pdf_path)
+    pages = await asyncio.to_thread(extract_text_per_page, pdf_path)
     total = len(pages) or 1
     svc = LLMService(config)
     translated_pages: list[str] = []
@@ -632,7 +664,7 @@ async def generate_text_only_translation(
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.splitext(os.path.basename(pdf_path))[0]
     result_path = os.path.join(out_dir, f"{base}-zh.pdf")
-    _write_text_pdf(translated_pages, result_path)
+    await asyncio.to_thread(_write_text_pdf, translated_pages, result_path)
 
     yield TranslateProgress(
         1.0,

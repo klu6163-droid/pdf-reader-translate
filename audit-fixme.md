@@ -105,6 +105,10 @@
   加载途中卸载时 `if (cancelled) return` 直接返回，拿到的 doc 未 destroy() → pdf.js 文档 + worker 泄漏。
   修复：`if (cancelled) { doc.destroy(); return; }`。
 
+- [ ] **2.13 `backend/app/api/summary.py:46`【3.3 期间发现】**
+  async 路由里直接同步调 `pdf_service.extract_text()` 全文抽取：大 PDF 阻塞事件循环数秒 → 期间 /api/health 无法响应、其他请求卡死（与 3.3 同类，但位于路由层而非翻译生成器）。
+  修复：`await asyncio.to_thread(pdf_service.extract_text, tmp_path)`（与 3.3 同一模式）。
+
 ---
 
 ## 批次 3：架构性改动（6 条，先出方案，逐条确认后再改）
@@ -117,7 +121,7 @@
   进度队列破坏性单消费：多 SSE 连接瓜分事件；finish() 不唤醒等待者 → 某端可能永远等不到 done。
   方向：订阅者模型（每连接独立队列，或 last_event 轮询 + 完成广播）。
 
-- [ ] **3.3 `backend/app/services/pdf_service.py:612, 635`（及 560-587 覆盖翻译路径）**
+- [x] **3.3 `backend/app/services/pdf_service.py:612, 635`（及 560-587 覆盖翻译路径）**
   降级/覆盖翻译在 async 生成器里直接跑同步重活（全文抽取、fitz 逐页、reportlab 写盘），阻塞整个事件循环 → /api/health 无法响应，前端判「离线」。
   方向：所有同步重调用 `await asyncio.to_thread(…)`（编辑/批注路由已是正确示范）。
 
