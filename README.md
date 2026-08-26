@@ -251,6 +251,27 @@ windres: preprocessing failed.
 - 任务状态存于后端内存，重启后端会丢失进行中的任务。
 - 左右页码同步为「就近页」策略，非像素级对齐。
 
+## 故障诊断与隐私边界
+
+右上角和后端离线卡均提供「导出诊断」，生成单个 `diagnostics.json`（不打包 ZIP）。
+它包含应用/后端版本、OS、CPU 架构、pdf2zh 可用性、最近 20 次翻译的状态元数据
+以及可读取到的运行日志。后端离线时，无法取得的后端状态会记为 `null`，仍可导出
+桌面壳和已有日志。
+
+诊断数据遵守以下硬边界：
+
+- 最近翻译状态只含 `task_id`、模式、耗时和成败，不含 PDF 文件名/路径、原文、译文或总结文本。
+- API Key 不写入诊断文件；Base URL 只保留主机名，不保留账号、端口、路径、查询参数。
+- 导出前会再次按白名单重建状态数据，并对日志中的常见凭据格式做脱敏。
+
+Windows 打包版日志位于 `%LOCALAPPDATA%\PDF Reader Translate\`：
+
+- `backend.log`：当前后端运行日志；超过 5 MB 时先保留为 `backend.log.1` 再清理当前文件。
+- `backend-restart.log`：桌面壳记录的后端启动、退出和重启轨迹。
+- `frontend-crash.log`：React 顶层 Error Boundary 捕获的最近一次界面崩溃信息。
+
+界面崩溃后的兜底页会直接显示 `frontend-crash.log` 路径，并允许单独下载崩溃信息。
+
 ---
 
 ## 许可证

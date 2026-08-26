@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import translate, pdf_trans, summary, pdf_edit, pdf_annot, overlay_trans
+from app.api import diagnostics, overlay_trans, pdf_annot, pdf_edit, pdf_trans, summary, translate
 from app.config import allowed_origins
 from app.middlewares import BodySizeLimitMiddleware
 
@@ -19,7 +19,6 @@ for _k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
            "http_proxy", "https_proxy", "all_proxy"):
     os.environ.pop(_k, None)
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
 app = FastAPI(title="PDF 阅读翻译后端", version="0.2.2")
@@ -70,6 +69,7 @@ app.include_router(summary.router)
 app.include_router(pdf_edit.router)
 app.include_router(pdf_annot.router)
 app.include_router(overlay_trans.router)
+app.include_router(diagnostics.router)
 
 
 @app.get("/api/health")

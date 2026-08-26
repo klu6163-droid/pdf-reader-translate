@@ -7,7 +7,15 @@
 // - unknown：灰色「检测中…」（兜底，正常不会出现）
 
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, RotateCw, HelpCircle, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Loader2,
+  RotateCw,
+  HelpCircle,
+  RefreshCw,
+} from 'lucide-react';
 
 /** 自动重拉进度；attempt=0 表示用户手动触发的重启 */
 export interface RestartProgress {
@@ -32,6 +40,8 @@ interface Props {
   onRecheck: () => void;
   onShowHelp: () => void;
   onRestart: () => void;
+  onExportDiagnostics: () => void;
+  diagnosticExporting?: boolean;
   restartAttempt?: RestartProgress | null;
   failure?: BackendFailureInfo | null;
 }
@@ -41,6 +51,8 @@ export default function BackendStatusBanner({
   onRecheck,
   onShowHelp,
   onRestart,
+  onExportDiagnostics,
+  diagnosticExporting,
   restartAttempt,
   failure,
 }: Props) {
@@ -85,7 +97,14 @@ export default function BackendStatusBanner({
   }
 
   return (
-    <OfflineCard onRecheck={onRecheck} onShowHelp={onShowHelp} onRestart={onRestart} failure={failure} />
+    <OfflineCard
+      onRecheck={onRecheck}
+      onShowHelp={onShowHelp}
+      onRestart={onRestart}
+      onExportDiagnostics={onExportDiagnostics}
+      diagnosticExporting={diagnosticExporting}
+      failure={failure}
+    />
   );
 }
 
@@ -93,19 +112,21 @@ function OfflineCard({
   onRecheck,
   onShowHelp,
   onRestart,
+  onExportDiagnostics,
+  diagnosticExporting,
   failure,
 }: {
   onRecheck: () => void;
   onShowHelp: () => void;
   onRestart: () => void;
+  onExportDiagnostics: () => void;
+  diagnosticExporting?: boolean;
   failure?: BackendFailureInfo | null;
 }) {
   // 崩溃后自动重拉耗尽：给出退出码与日志路径，方便用户反馈时提供
   const crashDetail =
     failure?.message ??
-    (failure?.code != null
-      ? `后端进程异常退出（退出码 ${failure.code}），自动重启未能恢复。`
-      : '');
+    (failure?.code != null ? `后端进程异常退出（退出码 ${failure.code}），自动重启未能恢复。` : '');
 
   return (
     <div className="flex items-start gap-3 px-4 py-3 text-sm bg-amber-50 text-amber-800 border-b border-amber-200 shrink-0">
@@ -120,6 +141,12 @@ function OfflineCard({
           <p className="text-amber-700 mt-1 text-xs break-all">
             反馈问题时请附上后端日志：{failure.logPath}
             <CopyButton text={failure.logPath} />
+          </p>
+        )}
+        {failure?.restartLog && (
+          <p className="text-amber-700 mt-1 text-xs break-all">
+            重启轨迹日志：{failure.restartLog}
+            <CopyButton text={failure.restartLog} />
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -144,6 +171,18 @@ function OfflineCard({
           >
             <HelpCircle size={13} />
             查看说明
+          </button>
+          <button
+            onClick={onExportDiagnostics}
+            disabled={diagnosticExporting}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-white border border-amber-300 rounded hover:bg-amber-50 text-amber-700 disabled:opacity-50"
+          >
+            {diagnosticExporting ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Download size={13} />
+            )}
+            {diagnosticExporting ? '正在导出' : '导出诊断'}
           </button>
         </div>
       </div>

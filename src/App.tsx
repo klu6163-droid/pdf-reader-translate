@@ -9,6 +9,8 @@ import {
   Highlighter,
   ChevronDown,
   Clock,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import { useStore } from '@/store/useSettings';
 import { checkBackend } from '@/services/api';
@@ -24,6 +26,7 @@ import BackendStatusBanner from '@/components/BackendStatusBanner';
 import HelpModal from '@/components/HelpModal';
 import type { AnnotTool } from '@/types';
 import { hasDirtyStash, persistStash, discardDirtyStash } from '@/services/annotStash';
+import { exportDiagnosticBundle } from '@/services/diagnostics';
 
 /** Rust 侧 emit 的 backend-status 事件载荷（审计 3.6 崩溃重拉） */
 type BackendStatusEvent =
@@ -43,6 +46,7 @@ export default function App() {
   const splitRatio = useStore((s) => s.splitRatio);
   const recentFiles = useStore((s) => s.recentFiles);
   const addRecentFile = useStore((s) => s.addRecentFile);
+  const settings = useStore((s) => s.settings);
 
   // 拖放遮罩显隐 + 拖放错误提示
   const [dragOver, setDragOver] = useState(false);
@@ -58,6 +62,8 @@ export default function App() {
 
   // 「查看说明」弹窗
   const [helpOpen, setHelpOpen] = useState(false);
+  const [diagnosticExporting, setDiagnosticExporting] = useState(false);
+  const [diagnosticNotice, setDiagnosticNotice] = useState('');
 
   // 后端崩溃重拉相关（审计 3.6）：
   // - restartAttempt：Rust 侧正在自动重拉的进度（attempt=0 表示用户手动触发）
@@ -211,6 +217,20 @@ export default function App() {
     }
   }, [setBackendStatus]);
 
+  const exportDiagnostics = useCallback(async () => {
+    setDiagnosticExporting(true);
+    setDiagnosticNotice('');
+    try {
+      const path = await exportDiagnosticBundle(settings, useStore.getState().getSummarySettings());
+      if (path) setDiagnosticNotice(`诊断信息已保存：${path}`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setDiagnosticNotice(`诊断信息导出失败：${detail}`);
+    } finally {
+      setDiagnosticExporting(false);
+    }
+  }, [settings]);
+
   // 以指定工具打开批注器（顶栏「批注」传 select；阅读器底部按钮传对应工具）
   const openAnnotWith = useCallback((tool: AnnotTool) => {
     setAnnotInitialTool(tool);
@@ -341,6 +361,19 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={exportDiagnostics}
+            disabled={diagnosticExporting}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50"
+            title="导出不含原文、译文和 API Key 的 diagnostics.json"
+          >
+            {diagnosticExporting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Download size={16} />
+            )}
+            {diagnosticExporting ? '导出中' : '导出诊断'}
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded"
           >
@@ -359,9 +392,20 @@ export default function App() {
         onRecheck={recheckBackend}
         onShowHelp={() => setHelpOpen(true)}
         onRestart={restartBackend}
+        onExportDiagnostics={exportDiagnostics}
+        diagnosticExporting={diagnosticExporting}
         restartAttempt={restartAttempt}
         failure={backendFail}
       />
+
+      {diagnosticNotice && (
+        <div className="flex items-center gap-2 px-4 py-2 text-xs bg-sky-50 text-sky-700 border-b border-sky-200 break-all">
+          <span className="flex-1">{diagnosticNotice}</span>
+          <button onClick={() => setDiagnosticNotice('')} aria-label="关闭诊断提示">
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 拖放错误提示条（自动 3 秒消失） */}
       {dropError && <DropErrorBanner message={dropError} onDismiss={dismissDropError} />}

@@ -10,6 +10,7 @@ from app.models.schemas import (
     TestConfigResponse,
 )
 from app.services.llm import LLMService, LLMError, test_config
+from app.services.diagnostics import start_translation
 
 router = APIRouter(prefix="/api", tags=["translate"])
 
@@ -20,13 +21,19 @@ async def translate_text(req: TextTranslateRequest) -> TextTranslateResponse:
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="待翻译文本为空")
+    trace = start_translation("text")
     try:
         svc = LLMService(req.config)
         translated = await svc.translate(
             text, target_lang=req.target_lang, source_lang=req.source_lang
         )
     except LLMError as e:
+        trace.finish(False)
         raise HTTPException(status_code=502, detail=str(e))
+    except Exception:
+        trace.finish(False)
+        raise
+    trace.finish(True)
     return TextTranslateResponse(
         original=text, translated=translated, model=req.config.model
     )

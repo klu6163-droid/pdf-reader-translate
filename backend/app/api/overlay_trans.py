@@ -23,6 +23,7 @@ from app.services.file_utils import (
     scoped_path,
 )
 from app.services.task_manager import task_manager
+from app.services.diagnostics import start_translation
 from app.middlewares import heavy_task_gate
 
 router = APIRouter(prefix="/api/overlay/pdf", tags=["overlay-translate"])
@@ -53,14 +54,19 @@ async def start_overlay_translate(
 
     config = LLMConfig(api_key=api_key, base_url=base_url, model=model)
     out_dir = scoped_path(WORK_DIR, task.id)
+    trace = start_translation("overlay", task.id)
 
     async def _run() -> None:
+        succeeded = False
+        final_mode = "overlay"
         try:
             # 与全文翻译共用重任务闸门。
             async with heavy_task_gate:
                 async for prog in pdf_service.generate_overlay_translation(
                     upload_path, out_dir, config
                 ):
+                    if prog.mode:
+                        final_mode = prog.mode
                     event = {
                         "progress": round(prog.progress, 4),
                         "message": prog.message,
@@ -70,6 +76,7 @@ async def start_overlay_translate(
                     }
                     await task_manager.push(task.id, event)
                     if prog.done:
+                        succeeded = not prog.error
                         task_manager.finish(
                             task.id,
                             result=prog.result_path,
@@ -83,6 +90,7 @@ async def start_overlay_translate(
             )
             task_manager.finish(task.id, error=str(e))
         finally:
+            trace.finish(succeeded, final_mode)
             asyncio.create_task(
                 cleanup_later(
                     [upload_path, out_dir],

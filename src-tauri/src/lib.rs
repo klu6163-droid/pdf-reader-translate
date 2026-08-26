@@ -73,6 +73,120 @@ fn write_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
     std::fs::write(&p, &data).map_err(|e| format!("写入文件失败：{e}"))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticExportRequest {
+    path: String,
+    backend_snapshot: Option<serde_json::Value>,
+    base_urls: Vec<String>,
+    redact_secrets: Vec<String>,
+}
+
+/// React 顶层 Error Boundary 将崩溃详情写入用户可直接取得的固定位置。
+#[tauri::command]
+fn record_frontend_crash(
+    message: String,
+    stack: String,
+    component_stack: String,
+) -> Result<String, String> {
+    let path = frontend_crash_log_path().ok_or_else(|| "无法确定前端崩溃日志目录".to_string())?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("创建日志目录失败：{e}"))?;
+    }
+    let clean = |value: &str| {
+        let limited: String = value.chars().take(20_000).collect();
+        sanitize_log_text(&limited, &[], &[])
+    };
+    let entry = format!(
+        "{} ERROR frontend.crash message={}\nstack={}\ncomponent_stack={}\n",
+        utc_timestamp(),
+        clean(&message),
+        clean(&stack),
+        clean(&component_stack)
+    );
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("打开前端崩溃日志失败：{e}"))?;
+    use std::io::Write;
+    file.write_all(entry.as_bytes())
+        .map_err(|e| format!("写入前端崩溃日志失败：{e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// 生成单个 diagnostics.json。即使 Python 后端离线，Rust 仍可导出本地日志。
+#[tauri::command]
+fn export_diagnostics(
+    app: tauri::AppHandle,
+    request: DiagnosticExportRequest,
+) -> Result<String, String> {
+    let target = std::path::PathBuf::from(&request.path);
+    let version = app.package_info().version.to_string();
+    let dir = log_dir();
+    export_diagnostics_json(
+        &target,
+        &version,
+        request.backend_snapshot.as_ref(),
+        &request.base_urls,
+        &request.redact_secrets,
+        dir.as_deref(),
+    )
+}
+
+/// Production export implementation, exposed so an integration test can exercise the exact
+/// file-writing and redaction path without constructing a GUI `AppHandle`.
+#[doc(hidden)]
+pub fn export_diagnostics_json(
+    target: &std::path::Path,
+    app_version: &str,
+    backend_snapshot: Option<&serde_json::Value>,
+    base_urls: &[String],
+    redact_secrets: &[String],
+    source_log_dir: Option<&std::path::Path>,
+) -> Result<String, String> {
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    if !extension.eq_ignore_ascii_case("json") {
+        return Err("诊断包只能保存为 .json 文件".into());
+    }
+
+    let hosts: Vec<String> = base_urls
+        .iter()
+        .filter_map(|value| extract_hostname(value))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let backend = backend_snapshot.map(sanitize_backend_snapshot);
+    let log = |path: Option<std::path::PathBuf>| -> Option<String> {
+        path.and_then(|value| read_log_tail(&value))
+            .map(|text| sanitize_log_text(&text, redact_secrets, base_urls))
+    };
+    let report = serde_json::json!({
+        "schema_version": 1,
+        "generated_at": utc_timestamp(),
+        "app": {
+            "version": app_version,
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+        },
+        "base_url_hosts": hosts,
+        "backend": backend,
+        "logs": {
+            "backend.log": log(source_log_dir.map(|value| value.join("backend.log"))),
+            "backend.log.1": log(source_log_dir.map(|value| value.join("backend.log.1"))),
+            "backend-restart.log": log(source_log_dir.map(|value| value.join("backend-restart.log"))),
+            "frontend-crash.log": log(source_log_dir.map(|value| value.join("frontend-crash.log"))),
+        },
+    });
+    let encoded = serde_json::to_string_pretty(&report)
+        .map_err(|e| format!("序列化诊断包失败：{e}"))?;
+    std::fs::write(target, encoded).map_err(|e| format!("写入诊断包失败：{e}"))?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
 /// 解码 encodeURIComponent 编码的字符串（用于 write_file 的 path 请求头）。
 /// 手写而不用 percent-encoding crate：只需处理 %XX 十六进制转义与
 /// 原样 ASCII 字符，解码结果按 UTF-8 校验。
@@ -240,7 +354,211 @@ fn restart_log_path() -> Option<std::path::PathBuf> {
     log_dir().map(|d| d.join("backend-restart.log"))
 }
 
-/// 追加一条重启轨迹（时间戳为 Unix 秒；人类可读的崩溃详情在隔壁 backend.log）。
+fn frontend_crash_log_path() -> Option<std::path::PathBuf> {
+    log_dir().map(|d| d.join("frontend-crash.log"))
+}
+
+#[doc(hidden)]
+pub fn format_unix_millis(total_millis: u128) -> String {
+    let total_seconds = (total_millis / 1000) as i64;
+    let millis = (total_millis % 1000) as u32;
+    let days = total_seconds.div_euclid(86_400);
+    let seconds_in_day = total_seconds.rem_euclid(86_400);
+    let hour = seconds_in_day / 3_600;
+    let minute = (seconds_in_day % 3_600) / 60;
+    let second = seconds_in_day % 60;
+
+    // Howard Hinnant's civil_from_days algorithm; avoids a new date/time crate.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += if month <= 2 { 1 } else { 0 };
+    format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
+    )
+}
+
+fn utc_timestamp() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    format_unix_millis(millis)
+}
+
+#[doc(hidden)]
+pub fn extract_hostname(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let authority_and_path = trimmed
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(trimmed);
+    let authority = authority_and_path
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .rsplit('@')
+        .next()
+        .unwrap_or("");
+    let host = if authority.starts_with('[') {
+        authority
+            .strip_prefix('[')
+            .and_then(|rest| rest.split_once(']').map(|(host, _)| host))
+            .unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    }
+    .trim()
+    .to_ascii_lowercase();
+    if host.is_empty()
+        || !host
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | ':'))
+    {
+        return None;
+    }
+    Some(host)
+}
+
+fn redact_sk_tokens(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut remaining = input;
+    while let Some(index) = remaining.find("sk-") {
+        output.push_str(&remaining[..index]);
+        output.push_str("[REDACTED_API_KEY]");
+        let token = &remaining[index + 3..];
+        let end = token
+            .char_indices()
+            .find(|(_, ch)| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')))
+            .map(|(idx, _)| idx)
+            .unwrap_or(token.len());
+        remaining = &token[end..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+fn urls_to_hosts(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut remaining = input;
+    loop {
+        let http = remaining.find("http://");
+        let https = remaining.find("https://");
+        let Some(index) = [http, https].into_iter().flatten().min() else {
+            output.push_str(remaining);
+            break;
+        };
+        output.push_str(&remaining[..index]);
+        let url_and_rest = &remaining[index..];
+        let end = url_and_rest
+            .char_indices()
+            .find(|(_, ch)| {
+                ch.is_whitespace()
+                    || matches!(
+                        ch,
+                        '"' | '\'' | '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
+                    )
+            })
+            .map(|(idx, _)| idx)
+            .unwrap_or(url_and_rest.len());
+        let candidate = &url_and_rest[..end];
+        if let Some(host) = extract_hostname(candidate) {
+            output.push_str(&host);
+        } else {
+            output.push_str(candidate);
+        }
+        remaining = &url_and_rest[end..];
+    }
+    output
+}
+
+#[doc(hidden)]
+pub fn sanitize_log_text(input: &str, secrets: &[String], base_urls: &[String]) -> String {
+    let mut text = input.to_string();
+    for secret in secrets.iter().filter(|value| value.len() >= 4) {
+        text = text.replace(secret, "[REDACTED_API_KEY]");
+    }
+    text = urls_to_hosts(&text);
+    for base_url in base_urls {
+        if let Some(host) = extract_hostname(base_url) {
+            text = text.replace(base_url, &host);
+        }
+    }
+    let text = redact_sk_tokens(&text);
+    text.lines()
+        .map(|line| {
+            let lower = line.to_ascii_lowercase();
+            if lower.contains("authorization")
+                || lower.contains("api_key")
+                || lower.contains("api-key")
+                || lower.contains("bearer ")
+                || lower.contains(".pdf")
+                || lower.contains("original_text")
+                || lower.contains("translated_text")
+                || lower.contains("source_text")
+                || lower.contains("target_text")
+                || lower.contains("原文")
+                || lower.contains("译文")
+            {
+                "[REDACTED_SENSITIVE_LINE]".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[doc(hidden)]
+pub fn sanitize_backend_snapshot(input: &serde_json::Value) -> serde_json::Value {
+    let translations = input
+        .get("recent_translations")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .take(20)
+                .map(|item| {
+                    serde_json::json!({
+                        "task_id": item.get("task_id").and_then(|value| value.as_str()).unwrap_or("").chars().take(64).collect::<String>(),
+                        "mode": item.get("mode").and_then(|value| value.as_str()).unwrap_or("").chars().take(32).collect::<String>(),
+                        "duration_ms": item.get("duration_ms").and_then(|value| value.as_u64()),
+                        "succeeded": item.get("succeeded").and_then(|value| value.as_bool()),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    serde_json::json!({
+        "backend_version": input.get("backend_version").and_then(|value| value.as_str()).unwrap_or("").chars().take(32).collect::<String>(),
+        "os": input.get("os").and_then(|value| value.as_str()).unwrap_or("").chars().take(64).collect::<String>(),
+        "arch": input.get("arch").and_then(|value| value.as_str()).unwrap_or("").chars().take(64).collect::<String>(),
+        "pdf2zh_available": input.get("pdf2zh_available").and_then(|value| value.as_bool()),
+        "recent_translations": translations,
+    })
+}
+
+fn read_log_tail(path: &std::path::Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    const MAX_EXPORT_LOG_BYTES: u64 = 5 * 1024 * 1024;
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len > MAX_EXPORT_LOG_BYTES {
+        file.seek(SeekFrom::Start(len - MAX_EXPORT_LOG_BYTES)).ok()?;
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// 追加一条重启轨迹；时间戳与 Python/前端日志统一为 UTC ISO-8601 毫秒。
 /// 写失败静默忽略——日志永远不该影响主流程。
 fn log_restart(line: &str) {
     eprintln!("[Tauri] {line}");
@@ -250,11 +568,7 @@ fn log_restart(line: &str) {
     }
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         use std::io::Write;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{ts}] {line}");
+        let _ = writeln!(f, "{} INFO tauri.backend {line}", utc_timestamp());
     }
 }
 
@@ -267,7 +581,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_pdf_file,
             write_file,
-            restart_backend
+            restart_backend,
+            record_frontend_crash,
+            export_diagnostics
         ])
         .manage(BackendProcess(Mutex::new(None)))
         .manage(ShuttingDown(AtomicBool::new(false)))

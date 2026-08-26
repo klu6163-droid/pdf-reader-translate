@@ -17,41 +17,29 @@ _LOG_DIR = os.path.join(
 _LOG_PATH = os.path.join(_LOG_DIR, "backend.log")
 
 
-def _reset_log_if_too_big(path: str) -> None:
-    """超过 5MB 则重置，避免无限增长。"""
-    try:
-        if os.path.exists(path) and os.path.getsize(path) > 5 * 1024 * 1024:
-            os.remove(path)
-    except OSError:
-        pass
-
-
 def _start_log_watchdog(log_file, path: str) -> None:
     """运行期滚动检查日志大小（长会话中启动时检查一次不够）。
 
-    超限时复用同一句柄原地清空：Windows 不允许删除已打开的文件，
-    ftruncate 是跨平台可行的重置方式（O_APPEND 写入自动落到新末尾）。
+    超限时先保留为 backend.log.1，备份成功后才清空当前打开句柄。
     """
     import threading
     import time
+    from app.logging_utils import backup_and_truncate_open_log
 
     def _watch() -> None:
         while True:
             time.sleep(60)
-            try:
-                if os.path.getsize(path) > 5 * 1024 * 1024:
-                    log_file.flush()
-                    os.ftruncate(log_file.fileno(), 0)
-            except Exception:
-                pass
+            backup_and_truncate_open_log(log_file, path)
 
     threading.Thread(target=_watch, daemon=True, name="log-watchdog").start()
 
 
 if getattr(sys, "frozen", False):
     try:
+        from app.logging_utils import rotate_closed_log
+
         os.makedirs(_LOG_DIR, exist_ok=True)
-        _reset_log_if_too_big(_LOG_PATH)
+        rotate_closed_log(_LOG_PATH)
         _f = open(_LOG_PATH, "a", encoding="utf-8", buffering=1)
         _fd = _f.fileno()
         os.dup2(_fd, 1)  # C 层 stdout（onnxruntime 等）
@@ -80,8 +68,10 @@ else:
     # dev：终端 + 文件双写。C 层 fd 1/2 仍指向终端（保留 onnxruntime 等直接写 fd 的输出）；
     # Python 层 sys.stdout/stderr 替换为 Tee，print/tqdm/logging/uvicorn 都会同步落盘。
     try:
+        from app.logging_utils import rotate_closed_log
+
         os.makedirs(_LOG_DIR, exist_ok=True)
-        _reset_log_if_too_big(_LOG_PATH)
+        rotate_closed_log(_LOG_PATH)
         _dev_f = open(_LOG_PATH, "a", encoding="utf-8", buffering=1)
 
         class _Tee:
@@ -134,10 +124,12 @@ if not getattr(sys, "frozen", False):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uvicorn
+from app.logging_utils import configure_logging
 from app.main import app  # 静态导入，便于 PyInstaller 跟踪依赖
+
+configure_logging()
 
 if __name__ == "__main__":
     # 端口固定 8765（审计 2.7）：前端 BASE 与 Tauri 探测都以该值为准，
     # 旧的 BACKEND_PORT 环境变量只有后端遵守，改它反而让前后端整体断连，故移除
-    uvicorn.run(app, host="127.0.0.1", port=8765, reload=False)
-
+    uvicorn.run(app, host="127.0.0.1", port=8765, reload=False, log_config=None)
