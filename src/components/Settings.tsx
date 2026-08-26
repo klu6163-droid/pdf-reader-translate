@@ -1,41 +1,99 @@
-// 设置弹窗：配置 API Key / Base URL / 模型名，并可测试连通性。
+// 设置弹窗：翻译与文献总结两套模型配置（各含 API Key / Base URL / 模型名），
+// 各自可测试连通性。总结配置留空的字段自动复用翻译配置。
 // API Key 只存在本地 localStorage，不写死、不上传第三方。
 
-import { useState } from "react";
-import { X, Loader2, CheckCircle, XCircle } from "lucide-react";
-import { useStore } from "@/store/useSettings";
-import { testSettings } from "@/services/api";
+import { useEffect, useRef, useState } from 'react';
+import { X, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { useStore, resolveSummarySettings } from '@/store/useSettings';
+import { testSettings } from '@/services/api';
+
+interface TestResult {
+  ok: boolean;
+  message: string;
+}
 
 export default function Settings() {
-  const { settings, setSettings, settingsOpen, setSettingsOpen } = useStore();
+  const {
+    settings,
+    setSettings,
+    summarySettings,
+    setSummarySettings,
+    settingsOpen,
+    setSettingsOpen,
+  } = useStore();
+
+  // 翻译配置（本地编辑态）
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [model, setModel] = useState(settings.model);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
+
+  // 文献总结配置（本地编辑态；留空 = 复用翻译配置）
+  const [summaryApiKey, setSummaryApiKey] = useState(summarySettings.apiKey);
+  const [summaryBaseUrl, setSummaryBaseUrl] = useState(summarySettings.baseUrl);
+  const [summaryModel, setSummaryModel] = useState(summarySettings.model);
+
+  const [testing, setTesting] = useState<'translate' | 'summary' | null>(null);
+  const [translateResult, setTranslateResult] = useState<TestResult | null>(null);
+  const [summaryResult, setSummaryResult] = useState<TestResult | null>(null);
+
+  // 「打开会话」编号：每次打开弹窗自增，使上一次打开时发起的在途测试请求作废，
+  // 避免其结果（最长 35s 后才返回）写到已重置的新输入框上
+  const sessionRef = useRef(0);
+
+  // 每次打开弹窗时从已保存的配置重新填充，避免上次未保存的编辑残留
+  useEffect(() => {
+    if (settingsOpen) {
+      sessionRef.current += 1;
+      setTesting(null);
+      setApiKey(settings.apiKey);
+      setBaseUrl(settings.baseUrl);
+      setModel(settings.model);
+      setSummaryApiKey(summarySettings.apiKey);
+      setSummaryBaseUrl(summarySettings.baseUrl);
+      setSummaryModel(summarySettings.model);
+      setTranslateResult(null);
+      setSummaryResult(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen]);
 
   if (!settingsOpen) return null;
 
   const save = () => {
     setSettings({ apiKey, baseUrl, model });
+    setSummarySettings({ apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel });
     setSettingsOpen(false);
   };
 
-  const test = async () => {
-    setTesting(true);
-    setTestResult(null);
+  const testTranslate = async () => {
+    const session = sessionRef.current;
+    setTesting('translate');
+    setTranslateResult(null);
     const res = await testSettings({ apiKey, baseUrl, model });
-    setTestResult(res);
-    setTesting(false);
+    if (sessionRef.current !== session) return; // 期间弹窗被重新打开，丢弃过期结果
+    setTranslateResult(res);
+    setTesting(null);
+  };
+
+  // 总结测试用「实际生效」的配置（空字段回退到左侧翻译配置）
+  const testSummary = async () => {
+    const session = sessionRef.current;
+    setTesting('summary');
+    setSummaryResult(null);
+    const effective = resolveSummarySettings(
+      { apiKey, baseUrl, model },
+      { apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel },
+    );
+    const res = await testSettings(effective);
+    if (sessionRef.current !== session) return; // 期间弹窗被重新打开，丢弃过期结果
+    setSummaryResult(res);
+    setTesting(null);
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[480px] max-w-[90vw]">
-        <div className="flex items-center justify-between px-5 py-3 border-b">
+      <div className="bg-white rounded-lg shadow-xl w-[520px] max-w-[92vw] max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b shrink-0">
           <h2 className="font-semibold text-slate-800">API 设置</h2>
           <button
             onClick={() => setSettingsOpen(false)}
@@ -45,78 +103,153 @@ export default function Settings() {
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
-          <Field label="API Key" hint="仅保存在本地，不会上传">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
-              className="input"
-            />
-          </Field>
+        <div className="p-5 space-y-5 overflow-auto">
+          {/* ---- 翻译配置 ---- */}
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+              <span className="w-1.5 h-4 bg-primary-500 rounded-full inline-block" />
+              翻译模型
+              <span className="text-xs font-normal text-slate-400">
+                划词翻译 / 全文翻译 / 覆盖翻译 / 术语解释
+              </span>
+            </h3>
 
-          <Field label="Base URL" hint="OpenAI-compatible 接口地址">
-            <input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-              className="input"
-            />
-          </Field>
+            <Field label="API Key" hint="仅保存在本地，不会上传">
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                className="input"
+              />
+            </Field>
 
-          <Field label="模型名称">
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="gpt-4o-mini"
-              className="input"
-            />
-          </Field>
+            <Field label="Base URL" hint="OpenAI-compatible 接口地址">
+              <input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.openai.com/v1"
+                className="input"
+              />
+            </Field>
 
-          {testResult && (
-            <div
-              className={`flex items-center gap-2 text-sm ${
-                testResult.ok ? "text-green-600" : "text-red-600"
-              }`}
-            >
-              {testResult.ok ? (
-                <CheckCircle size={16} />
-              ) : (
-                <XCircle size={16} />
-              )}
-              <span className="break-all">{testResult.message}</span>
+            <Field label="模型名称">
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="gpt-4o-mini"
+                className="input"
+              />
+            </Field>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={testTranslate}
+                disabled={testing !== null || !apiKey}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm border rounded hover:bg-slate-50 disabled:opacity-50"
+              >
+                {testing === 'translate' && <Loader2 className="animate-spin" size={14} />}
+                测试连接
+              </button>
+              {translateResult && <TestBadge result={translateResult} />}
             </div>
-          )}
+          </section>
+
+          <div className="border-t border-dashed" />
+
+          {/* ---- 文献总结配置 ---- */}
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+              <span className="w-1.5 h-4 bg-amber-500 rounded-full inline-block" />
+              文献总结模型
+              <span className="text-xs font-normal text-slate-400">可选</span>
+            </h3>
+            <p className="text-xs text-slate-400 -mt-2">
+              可为文献总结单独指定服务商与模型；留空的项自动复用上方「翻译模型」配置。
+            </p>
+
+            <Field label="API Key">
+              <input
+                type="password"
+                value={summaryApiKey}
+                onChange={(e) => setSummaryApiKey(e.target.value)}
+                placeholder="留空则使用翻译配置的 API Key"
+                className="input"
+              />
+            </Field>
+
+            <Field label="Base URL">
+              <input
+                value={summaryBaseUrl}
+                onChange={(e) => setSummaryBaseUrl(e.target.value)}
+                placeholder="留空则使用翻译配置的 Base URL"
+                className="input"
+              />
+            </Field>
+
+            <Field label="模型名称">
+              <input
+                value={summaryModel}
+                onChange={(e) => setSummaryModel(e.target.value)}
+                placeholder="留空则使用翻译配置的模型"
+                className="input"
+              />
+            </Field>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={testSummary}
+                disabled={
+                  testing !== null ||
+                  !resolveSummarySettings(
+                    { apiKey, baseUrl, model },
+                    { apiKey: summaryApiKey, baseUrl: summaryBaseUrl, model: summaryModel },
+                  ).apiKey
+                }
+                className="flex items-center gap-2 px-3 py-1.5 text-sm border rounded hover:bg-slate-50 disabled:opacity-50"
+              >
+                {testing === 'summary' && <Loader2 className="animate-spin" size={14} />}
+                测试连接
+              </button>
+              {summaryResult && <TestBadge result={summaryResult} />}
+            </div>
+          </section>
         </div>
 
-        <div className="flex justify-between items-center px-5 py-3 border-t">
+        <div className="flex justify-end items-center gap-2 px-5 py-3 border-t shrink-0">
           <button
-            onClick={test}
-            disabled={testing || !apiKey}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm border rounded hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => setSettingsOpen(false)}
+            className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded"
           >
-            {testing && <Loader2 className="animate-spin" size={14} />}
-            测试连接
+            取消
           </button>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSettingsOpen(false)}
-              className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded"
-            >
-              取消
-            </button>
-            <button
-              onClick={save}
-              className="px-4 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
-            >
-              保存
-            </button>
-          </div>
+          <button
+            onClick={save}
+            className="px-4 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
+          >
+            保存
+          </button>
         </div>
       </div>
 
       <style>{`.input{width:100%;padding:0.5rem 0.75rem;border:1px solid #cbd5e1;border-radius:0.375rem;font-size:0.875rem;outline:none}.input:focus{border-color:#2563eb}`}</style>
+    </div>
+  );
+}
+
+function TestBadge({ result }: { result: TestResult }) {
+  return (
+    <div
+      className={`flex items-center gap-2 text-sm min-w-0 ${
+        result.ok ? 'text-green-600' : 'text-red-600'
+      }`}
+    >
+      {result.ok ? (
+        <CheckCircle size={16} className="shrink-0" />
+      ) : (
+        <XCircle size={16} className="shrink-0" />
+      )}
+      <span className="break-all">{result.message}</span>
     </div>
   );
 }

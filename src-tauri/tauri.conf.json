@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && npm run build:backend",
     "frontendDist": "../dist"
   },
   "app": {
@@ -36,7 +36,9 @@
       "icons/icon.ico"
     ],
     "externalBin": ["binaries/backend"],
-    "resources": ["target/release/WebView2Loader.dll"]
+    "resources": {
+      "_internal": "_internal"
+    }
   },
   "plugins": {}
 }

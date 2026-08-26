@@ -1,11 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller 打包配置：把 Python 后端打成单一 exe，作为 Tauri sidecar。
+# PyInstaller 打包配置：把 Python 后端打成 onedir 目录，作为 Tauri sidecar。
 #
 # PDF2ZH_EXCLUDE = False（阶段B）：打包 pdf2zh，全文翻译保留排版。
 #   依赖 onnxruntime/cv2/pymupdf/babeldoc 等原生库，体积约 200MB+。
 # PDF2ZH_EXCLUDE = True（阶段A）：排除 pdf2zh，全文翻译走降级覆盖翻译模式，体积约 58MB。
 
 import sys
+from importlib.util import find_spec
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
@@ -29,6 +30,8 @@ extra_datas = []
 extra_hidden = []
 if not PDF2ZH_EXCLUDE:
     for pkg in ["pdf2zh", "babeldoc", "onnxruntime", "cv2", "pymupdf", "fitz"]:
+        if find_spec(pkg) is None:
+            raise RuntimeError(f"[spec] 阶段B缺少必需依赖: {pkg}")
         try:
             d, b, h = collect_all(pkg)
             extra_datas += d
@@ -36,7 +39,7 @@ if not PDF2ZH_EXCLUDE:
             extra_hidden += h
             print(f"[spec] collect_all {pkg}: {len(d)} datas, {len(b)} bins, {len(h)} hidden")
         except Exception as e:
-            print(f"[spec] collect_all {pkg} 失败: {e}")
+            raise RuntimeError(f"[spec] collect_all {pkg} 失败: {e}") from e
 
 a = Analysis(
     ["start.py"],
@@ -70,22 +73,32 @@ if rl_path.exists():
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# onedir 模式：backend.exe 只是小启动器 (~2MB)，依赖放在 sibling _internal/ 目录。
+# 相比 onefile，首次启动从 ~15s 降到 <2s（无需每次解压 500MB 到 %TEMP%）。
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="backend",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="backend",
 )

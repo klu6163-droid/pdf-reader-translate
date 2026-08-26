@@ -33,17 +33,10 @@ def _mode_label(mode: str) -> str:
 
 
 # ---------- 字体处理（真实 vs 兼容的唯一分歧点）----------
+#
+# 候选清单集中在 app.services.fonts 里，这里只保留 base-14 映射与语义包装。
 
-# 中文/非拉丁替代字体候选（含 Latin/Cyrillic/Greek/CJK，覆盖面广）。
-_CJK_FONT_CANDIDATES = (
-    r"C:\Windows\Fonts\msyh.ttc",       # Microsoft YaHei
-    r"C:\Windows\Fonts\simsun.ttc",     # SimSun
-    r"C:\Windows\Fonts\simhei.ttf",     # SimHei
-    r"C:\Windows\Fonts\STSONG.TTF",
-    r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
-)
-
-_CJK_FONT_CACHE: list[Optional[str]] = []
+from app.services.fonts import resolve_cjk_font_path
 
 # base-14 标准字体代号（PyMuPDF 内置，无需 fontfile）。
 _HELV = {(False, False): "helv", (True, False): "hebo", (False, True): "heit", (True, True): "hebi"}
@@ -54,10 +47,7 @@ _CJK_FONTNAME = "EDITCJK"
 
 
 def _cjk_font_path() -> Optional[str]:
-    if not _CJK_FONT_CACHE:
-        found = next((p for p in _CJK_FONT_CANDIDATES if os.path.exists(p)), None)
-        _CJK_FONT_CACHE.append(found)
-    return _CJK_FONT_CACHE[0]
+    return resolve_cjk_font_path()
 
 
 def _strip_subset(font_name: str) -> str:
@@ -290,7 +280,12 @@ def apply_edits(pdf_path: str, edits: list[dict[str, Any]], out_path: str) -> di
                 if e.get("deleted"):
                     edited += 1
                     continue
-                text = e.get("text", info["text"])
+                # 注意：EditOp.model_dump() 恒带 text 键（未改文字时为 None），
+                # 不能用 e.get("text", info["text"]) 兜底——那会把 None 当新文本，
+                # 在 redaction 移除原文后把字面 "None" 写进 PDF。只有显式 None 才回退原文。
+                text = e.get("text")
+                if text is None:
+                    text = info["text"]
                 if not str(text):
                     edited += 1
                     continue

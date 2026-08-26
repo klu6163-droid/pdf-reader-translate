@@ -1,0 +1,11 @@
+dist/
+build/
+coverage/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+backend/
+scripts/
+node_modules/
+package-lock.json
+*.md

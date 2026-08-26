@@ -25,6 +25,12 @@ ANTI_HALLUCINATION = (
 
 SUMMARY_HEADINGS = "## 研究问题\n## 方法\n## 主要贡献\n## 实验结果\n## 结论\n## 局限性\n## 中文摘要"
 
+TERMS_SYSTEM_PROMPT = """你是一名专业术语词典助手。给定一段（可能是科研/技术文献的）原文，请：
+1. 识别其中最重要的专业术语（通常 3~8 个，过多则只取最关键）。
+2. 用中文给出每个术语的简短解释（1~2 句，面向该文语境）。
+3. 若原文为中文，术语保留原文形式并解释；若判断不出明确术语，输出「原文未包含明确的专业术语」。
+输出格式为 Markdown 列表：`- 术语：解释`。不要输出与术语无关的内容，不要复述原文。"""
+
 
 class LLMError(Exception):
     """LLM 调用相关错误。"""
@@ -61,14 +67,26 @@ class LLMService:
         }
         url = f"{self._base}/chat/completions"
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            resp = await client.post(url, headers=self._headers, json=payload)
+            try:
+                resp = await client.post(url, headers=self._headers, json=payload)
+            except httpx.HTTPError as e:
+                # 网络异常/超时等统一包成 LLMError，路由层才能给出可读错误
+                raise LLMError(f"LLM 请求失败（网络或超时）: {e}") from e
             if resp.status_code != 200:
                 raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
-            data = resp.json()
             try:
-                return data["choices"][0]["message"]["content"]
-            except (KeyError, IndexError) as e:
+                data = resp.json()
+            except ValueError as e:
+                raise LLMError("LLM 返回了非 JSON 响应，请检查 Base URL 是否正确") from e
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as e:
                 raise LLMError(f"LLM 响应格式异常: {e}")
+            # content 为 null 是合法响应（如内容审查拒答），不能原样返回
+            # ——下游按 str 校验会 500，必须转成可读错误
+            if content is None:
+                raise LLMError("LLM 返回了空内容（可能是内容审查拒答或模型异常），请重试或更换模型")
+            return content
 
     async def chat_stream(
         self,
@@ -84,28 +102,34 @@ class LLMService:
             "stream": True,
         }
         url = f"{self._base}/chat/completions"
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            async with client.stream(
-                "POST", url, headers=self._headers, json=payload
-            ) as resp:
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    raise LLMError(
-                        f"LLM 返回 {resp.status_code}: {body.decode('utf-8', 'ignore')[:200]}"
-                    )
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    chunk = line[len("data:"):].strip()
-                    if chunk == "[DONE]":
-                        break
-                    try:
-                        obj = json.loads(chunk)
-                        delta = obj["choices"][0]["delta"].get("content")
-                        if delta:
-                            yield delta
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
+        try:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+                async with client.stream(
+                    "POST", url, headers=self._headers, json=payload
+                ) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        raise LLMError(
+                            f"LLM 返回 {resp.status_code}: {body.decode('utf-8', 'ignore')[:200]}"
+                        )
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        chunk = line[len("data:"):].strip()
+                        if chunk == "[DONE]":
+                            break
+                        try:
+                            obj = json.loads(chunk)
+                            delta = obj["choices"][0]["delta"].get("content")
+                            if delta:
+                                yield delta
+                        except Exception:  # noqa: BLE001
+                            # 非标端点的畸形行（delta 为 null、choices 非列表等）
+                            # 一律跳过该行，不能因一行坏数据掐断整个流
+                            continue
+        except httpx.HTTPError as e:
+            # 建连失败/流中途断开等网络异常统一包成 LLMError
+            raise LLMError(f"LLM 流式请求失败（网络或超时）: {e}") from e
 
     # -------- 高层业务方法 --------
 
@@ -123,6 +147,20 @@ class LLMService:
             {"role": "user", "content": text},
         ]
         return await self.chat(messages)
+
+    async def explain_terms(self, text: str) -> str:
+        """识别并解释原文中的专业术语。"""
+        content = await self.chat(
+            [
+                {"role": "system", "content": TERMS_SYSTEM_PROMPT},
+                {"role": "user", "content": text[:4000]},
+            ],
+            temperature=0.2,
+            timeout=90.0,
+        )
+        if not isinstance(content, str) or not content.strip():
+            raise LLMError("术语解释返回为空")
+        return content.strip()
 
     def build_summary_messages(self, full_text: str) -> list[dict]:
         """构造文献总结的消息。要求结构化、可控、不编造。"""

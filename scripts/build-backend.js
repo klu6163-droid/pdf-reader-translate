@@ -1,8 +1,9 @@
-// 用 PyInstaller 打包 Python 后端为单一 exe，复制到 Tauri sidecar 目录。
-// sidecar 文件名需带 target triple 后缀（如 -x86_64-pc-windows-gnu）。
+// 用 PyInstaller 打包 Python 后端为 onedir 模式（backend.exe 启动器 + _internal/ 依赖），
+// 然后拷贝到 Tauri sidecar 目录 + 资源目录。onedir 相比 onefile 冷启动快 10x（无需自解压）。
+// 正式发布固定为 Windows GNU，与本机及 CI 的 Rust target 保持一致。
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, cpSync, rmSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,10 +12,22 @@ const ROOT = resolve(__dirname, "..");
 const SPEC = resolve(ROOT, "backend/backend.spec");
 const DIST = resolve(ROOT, "build/backend");
 const BINARIES_DIR = resolve(ROOT, "src-tauri/binaries");
+const INTERNAL_DST = resolve(ROOT, "src-tauri/_internal");
+const RELEASE_TARGET = "x86_64-pc-windows-gnu";
 
 function run(cmd, opts = {}) {
   console.log(`$ ${cmd}`);
-  execSync(cmd, { stdio: "inherit", cwd: ROOT, ...opts });
+  execSync(cmd, {
+    stdio: "inherit",
+    cwd: ROOT,
+    // 发布构建只允许使用当前虚拟环境，避免用户级 site-packages 污染或权限阻断。
+    env: {
+      ...process.env,
+      PYTHONNOUSERSITE: "1",
+      PYTHONUSERBASE: resolve(ROOT, "build/python-userbase"),
+    },
+    ...opts,
+  });
 }
 
 function getTargetTriple() {
@@ -25,31 +38,45 @@ function getTargetTriple() {
   return m[1];
 }
 
-console.log("=== 1. PyInstaller 打包后端 ===");
+console.log("=== 1. PyInstaller 打包后端（onedir）===");
+const hostTriple = getTargetTriple();
+if (hostTriple !== RELEASE_TARGET) {
+  throw new Error(
+    `发布构建要求 Rust host 为 ${RELEASE_TARGET}，当前为 ${hostTriple}。请切换 GNU 工具链后重试。`
+  );
+}
 rmSync(DIST, { recursive: true, force: true });
 rmSync(resolve(ROOT, "build/backend-tmp"), { recursive: true, force: true });
-run(`pyinstaller "${SPEC}" --distpath "${DIST}" --workpath "${resolve(ROOT, "build/backend-tmp")}" --noconfirm`);
+run(
+  `python -m PyInstaller "${SPEC}" --distpath "${DIST}" --workpath "${resolve(
+    ROOT,
+    "build/backend-tmp"
+  )}" --noconfirm`
+);
 
-const builtExe = resolve(DIST, "backend.exe");
-if (!existsSync(builtExe)) {
-  console.error(`!! 未找到产物: ${builtExe}`);
+// onedir 产物结构：build/backend/backend/{backend.exe, _internal/}
+const oneDirRoot = resolve(DIST, "backend");
+const builtExe = resolve(oneDirRoot, "backend.exe");
+const builtInternal = resolve(oneDirRoot, "_internal");
+if (!existsSync(builtExe) || !existsSync(builtInternal)) {
+  console.error(`!! onedir 产物缺失: ${builtExe} 或 ${builtInternal}`);
   process.exit(1);
 }
 
-console.log("\n=== 2. 复制到 Tauri sidecar 目录（带 target triple 后缀）===");
+console.log("\n=== 2. 复制 backend.exe 到 sidecar 目录（带 target triple 后缀）===");
 mkdirSync(BINARIES_DIR, { recursive: true });
+// Tauri bundler 按 target triple 查找 sidecar；只生成 GNU 名称，避免
+// 通过复制同一 exe 伪装成 MSVC/GNU 双工具链而掩盖发布环境漂移。
+const sidecarDst = resolve(BINARIES_DIR, `backend-${RELEASE_TARGET}.exe`);
+copyFileSync(builtExe, sidecarDst);
+console.log(`✓ sidecar: ${sidecarDst}`);
 
-// Tauri bundler（tauri-cli）与 app 运行时可能用不同 triple 查找 sidecar：
-// - bundler 用 tauri-cli 编译时的 triple（常为 msvc）
-// - 运行时 app 找的是不带 triple 的 backend.exe（bundler 打包时去 triple 重命名）
-// 为兼容，同时放 gnu 和 msvc 两个命名副本，bundler 找到任一即可。
-const hostTriple = getTargetTriple();
-const triples = new Set([hostTriple, "x86_64-pc-windows-msvc", "x86_64-pc-windows-gnu"]);
-for (const tr of triples) {
-  const dst = resolve(BINARIES_DIR, `backend-${tr}.exe`);
-  copyFileSync(builtExe, dst);
-  console.log(`✓ sidecar: ${dst}`);
-}
+console.log("\n=== 3. 复制 _internal/ 到资源目录 ===");
+// 通过 tauri.conf.json 的 resources map ({ "_internal": "_internal" }) 打包时
+// 会被复制到安装目录下与 backend.exe 同级，backend.exe 启动时能找到依赖。
+rmSync(INTERNAL_DST, { recursive: true, force: true });
+cpSync(builtInternal, INTERNAL_DST, { recursive: true });
+console.log(`✓ resources: ${INTERNAL_DST}`);
 
 console.log("\n=== 完成 ===");
 console.log("现在可运行: npm run tauri:build");

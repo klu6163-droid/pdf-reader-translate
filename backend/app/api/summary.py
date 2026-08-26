@@ -1,6 +1,7 @@
 """文献总结路由（提取全文 + 流式 LLM 输出）。"""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -43,7 +44,8 @@ async def summary_stream(
         f.write(await file.read())
 
     try:
-        full_text = pdf_service.extract_text(tmp_path)
+        # 全文抽取是同步 I/O/CPU 重活，不能阻塞 summary 路由所在的事件循环。
+        full_text = await asyncio.to_thread(pdf_service.extract_text, tmp_path)
     except Exception as e:  # noqa: BLE001
         remove_path(tmp_path)
         raise HTTPException(status_code=500, detail=f"PDF 文本提取失败: {e}")
@@ -65,6 +67,10 @@ async def summary_stream(
             yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
         except LLMError as e:
             yield f"data: {json.dumps({'error': str(e), 'done': True}, ensure_ascii=False)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            # 非 LLM 异常（全文提取失败等）也不能无声截断，
+            # 否则前端把残缺内容当正常结束
+            yield f"data: {json.dumps({'error': f'总结失败: {e}', 'done': True}, ensure_ascii=False)}\n\n"
         finally:
             remove_path(tmp_path)
 

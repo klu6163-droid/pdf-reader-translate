@@ -2,53 +2,63 @@
 // 不依赖 tauri-plugin-fs 的 scope 配置，可读任意本地路径。
 // 纯浏览器（非 Tauri）环境下这些调用会失败，由调用方降级处理。
 
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { save } from "@tauri-apps/plugin-dialog";
+import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { save } from '@tauri-apps/plugin-dialog';
 
 /** 通过 Rust command 读取本地 PDF，返回字节。 */
 export async function readPdfFile(path: string): Promise<Uint8Array> {
-  // Rust 返回 Vec<u8> → 前端拿到 number[]
-  const bytes = await invoke<number[]>("read_pdf_file", { path });
-  return new Uint8Array(bytes);
+  // Rust 侧以 tauri::ipc::Response 裸字节通道返回（审计 3.5），正常收到 ArrayBuffer；
+  // number[] 仅作字节通道不可用时的防御兜底
+  const res = await invoke<ArrayBuffer | number[]>('read_pdf_file', { path });
+  return res instanceof ArrayBuffer ? new Uint8Array(res) : Uint8Array.from(res);
 }
 
 /** 从路径中取文件名。 */
 export function basename(path: string): string {
-  return path.split(/[\\/]/).pop() || "document.pdf";
+  return path.split(/[\\/]/).pop() || 'document.pdf';
+}
+
+/** 纯浏览器降级：触发下载。 */
+function browserDownload(data: Uint8Array, name: string): void {
+  // 拷到独立 ArrayBuffer：BlobPart 不接受 ArrayBufferLike（可能是 SharedArrayBuffer）
+  const copy = new Uint8Array(data.length);
+  copy.set(data);
+  const blob = new Blob([copy.buffer], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /**
  * 把 PDF 字节保存到本地（导出/另存）。
  * Tauri：save 对话框选路径 + write_file command 落盘；返回保存路径，取消则 null。
  * 非 Tauri（浏览器 dev）：降级为触发浏览器下载。
+ *
+ * 注意区分错误来源：只有「非 Tauri 环境」才降级下载；
+ * 写盘失败等真实错误必须抛给调用方显示，否则编辑成果会被无声丢失。
  */
-export async function savePdfFile(
-  data: Uint8Array,
-  suggestedName: string
-): Promise<string | null> {
-  // 复制一份，避免序列化原 buffer
-  const copy = new Uint8Array(data.length);
-  copy.set(data);
-  try {
-    const path = await save({
-      defaultPath: suggestedName,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
-    });
-    if (!path) return null; // 用户取消
-    await invoke<void>("write_file", { path, data: Array.from(copy) });
-    return path;
-  } catch {
-    // 非 Tauri 环境降级：浏览器下载
-    const blob = new Blob([copy], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = suggestedName;
-    a.click();
-    URL.revokeObjectURL(url);
+export async function savePdfFile(data: Uint8Array, suggestedName: string): Promise<string | null> {
+  // 非 Tauri 环境（纯浏览器）没有 invoke/save，才降级为浏览器下载
+  // （browserDownload 内部会自行拷贝，避免 data 底层 buffer 直接进 Blob）
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    browserDownload(data, suggestedName);
     return null;
   }
+
+  const path = await save({
+    defaultPath: suggestedName,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (!path) return null; // 用户取消
+  // 写盘失败：不吞异常，抛给调用方显示真实原因。
+  // 审计 3.5：字节以裸请求体（octet-stream）直传，路径经请求头传入（encodeURIComponent），
+  // 不再走 JSON number[]（200MB 文件会有 8~16 倍内存放大 + 巨慢序列化）
+  await invoke<void>('write_file', data, { headers: { path: encodeURIComponent(path) } });
+  return path;
 }
 
 export interface DragDropCallbacks {
@@ -62,16 +72,14 @@ export interface DragDropCallbacks {
  * 监听 Tauri 原生拖放事件（HTML5 ondrop 在 Tauri 下不触发）。
  * 返回取消监听的函数。非 Tauri 环境下返回空函数。
  */
-export async function listenDragDrop(
-  cb: DragDropCallbacks
-): Promise<() => void> {
+export async function listenDragDrop(cb: DragDropCallbacks): Promise<() => void> {
   try {
     const webview = getCurrentWebview();
     const unlisten = await webview.onDragDropEvent((event) => {
       const p = event.payload;
-      if (p.type === "enter") cb.onEnter();
-      else if (p.type === "leave") cb.onLeave();
-      else if (p.type === "drop") {
+      if (p.type === 'enter') cb.onEnter();
+      else if (p.type === 'leave') cb.onLeave();
+      else if (p.type === 'drop') {
         cb.onLeave();
         cb.onDrop(p.paths);
       }

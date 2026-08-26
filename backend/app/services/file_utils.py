@@ -24,7 +24,11 @@ def safe_pdf_filename(filename: str | None, default: str = "upload.pdf") -> str:
         cleaned = default
     if not cleaned.lower().endswith(".pdf"):
         cleaned = f"{cleaned}.pdf"
-    return cleaned[:180]
+    if len(cleaned) > 180:
+        # 截断主体、保留后缀：直接 [:180] 会把超长文件名的 .pdf 截掉
+        stem, ext = os.path.splitext(cleaned)
+        cleaned = stem[: 180 - len(ext)] + ext
+    return cleaned
 
 
 def scoped_path(root: str, *parts: str) -> str:

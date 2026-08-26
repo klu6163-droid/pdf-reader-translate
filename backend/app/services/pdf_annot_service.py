@@ -26,6 +26,9 @@ _logger = logging.getLogger("pdf_annot_service")
 ANNOT_FILE = "annotations.json"
 SOURCE_PDF = "source.pdf"
 OUTPUT_PDF = "annotated.pdf"
+# 打开会话时导入失败的原有批注的 xref 清单（审计 2.9）：
+# 这些批注不在 annotations.json 里，但保存清理时绝不能删它们
+FAILED_XREFS_FILE = "import_failed_xrefs.json"
 
 SAVED_NOTE = "批注已保存为新 PDF，原文件未被修改。"
 
@@ -115,6 +118,27 @@ def _store(work: str, annots: list[dict[str, Any]]) -> None:
         json.dump(annots, f, ensure_ascii=False, indent=1)
 
 
+def _load_failed_xrefs(work: str) -> set[int]:
+    """读取导入失败的原有批注 xref 清单（不存在/损坏视为空）。"""
+    p = os.path.join(work, FAILED_XREFS_FILE)
+    if not os.path.exists(p):
+        return set()
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {int(x) for x in data} if isinstance(data, list) else set()
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _store_failed_xrefs(work: str, xrefs: set[int]) -> None:
+    try:
+        with open(os.path.join(work, FAILED_XREFS_FILE), "w", encoding="utf-8") as f:
+            json.dump(sorted(xrefs), f)
+    except OSError as e:  # noqa: BLE001
+        _logger.info("写入导入失败清单失败: %s", e)
+
+
 def _normalize(annot: dict[str, Any]) -> dict[str, Any]:
     """补齐字段/清洗类型，保证结构一致。"""
     a = dict(annot)
@@ -153,6 +177,7 @@ def open_session(work: str) -> dict[str, Any]:
 
     imported: list[dict[str, Any]] = []
     pages: list[dict[str, Any]] = []
+    failed_xrefs: set[int] = set()
     try:
         for pno in range(len(doc)):
             page = doc[pno]
@@ -171,11 +196,18 @@ def open_session(work: str) -> dict[str, Any]:
                     if imported_annot:
                         imported.append(imported_annot)
                 except Exception as e:  # noqa: BLE001
+                    # 记录导入失败的 xref：它不在列表里，但保存时绝不能删，
+                    # 否则这些原有批注会被静默移出产物
+                    try:
+                        failed_xrefs.add(int(an.xref))
+                    except Exception:  # noqa: BLE001
+                        pass
                     _logger.info("导入已有批注失败(page=%s): %s", pno, e)
     finally:
         doc.close()
 
     _store(work, imported)
+    _store_failed_xrefs(work, failed_xrefs)
     return {"annotations": imported, "pages": pages, "page_count": len(pages)}
 
 
@@ -291,6 +323,8 @@ def save_annotated_pdf(work: str, annotations: Optional[list[dict[str, Any]]] = 
     try:
         # 1) 处理导入批注（source="pdf"）：被删的从副本移除；注释被改的更新 content
         live_xrefs = {a.get("xref") for a in annots if a.get("source") == "pdf"}
+        # 打开会话时导入失败的批注：不参与删除判定，原样保留（审计 2.9）
+        failed_xrefs = _load_failed_xrefs(work)
         by_xref = {a.get("xref"): a for a in annots if a.get("source") == "pdf"}
         for pno in range(len(doc)):
             page = doc[pno]
@@ -304,6 +338,8 @@ def save_annotated_pdf(work: str, annotations: Optional[list[dict[str, Any]]] = 
                 if type_name not in _FITZ_TYPE_MAP:
                     continue  # 不认识的类型原样保留
                 if an.xref not in live_xrefs:
+                    if int(an.xref) in failed_xrefs:
+                        continue  # 导入失败的原有批注：保留，不静默删除
                     try:
                         page.delete_annot(an)
                         deleted_existing += 1

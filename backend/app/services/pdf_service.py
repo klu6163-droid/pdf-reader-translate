@@ -20,6 +20,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from typing import AsyncGenerator, Optional, Tuple
@@ -113,16 +114,27 @@ def _openai_envs(config: LLMConfig) -> dict:
     }
 
 
-def _clean_stale_outputs(out_dir: str, pdf_path: str) -> None:
-    """每次尝试前清掉上次可能残留的 {base}-mono.pdf / {base}-dual.pdf。"""
-    base = os.path.splitext(os.path.basename(pdf_path))[0]
-    for suffix in ("-mono.pdf", "-dual.pdf"):
-        p = os.path.join(out_dir, f"{base}{suffix}")
-        try:
-            if os.path.exists(p):
-                os.remove(p)
-        except OSError:
-            pass
+# ---------- 超时回收（审计 3.1）----------
+
+# 超时置取消信号后，等待线程/任务真正退出的上限（秒）。
+# 上限内退出记「回收成功」；超上限记「放弃回收」——取消信号已置位，
+# 线程会在下一个检查点（页边界 / babeldoc 内部检查点）自行退出，
+# 且它只能写进自己那次尝试的隔离子目录，不再污染其他路径。
+GRACE_REAP_SECONDS = 60.0
+
+
+class _AttemptTimeout(Exception):
+    """内部异常：某次尝试超时，str 已含回收结果描述。"""
+
+
+def _timeout_msg(timeout: float, exited: bool, wait_secs: float) -> str:
+    """统一的超时文案：挂到 _log_attempt 的 error 字段与返回值上。"""
+    if exited:
+        return f"超时（{timeout:.0f}s），取消信号生效，{wait_secs:.1f}s 内退出"
+    return (
+        f"超时（{timeout:.0f}s），等待 {wait_secs:.0f}s 仍未退出，放弃回收"
+        "（取消信号已置位，将在下一检查点退出；产物限于本次尝试目录）"
+    )
 
 
 def _find_output(out_dir: str, pdf_path: str) -> Optional[str]:
@@ -194,16 +206,26 @@ async def run_pdf2zh_cli(
       - compatible_skip_subset: translate(compatible=True, skip_subset_fonts=True)
 
     返回 (ok, result_path, error_msg)。
+
+    超时处理（审计 3.1）：wait_for 只能取消等待、杀不死线程——旧实现超时后
+    僵尸线程继续烧 LLM 额度，收尾时还会往共享目录写产物。现在：
+    - pdf2zh 路线：向 translate() 传 cancellation_event，超时置位后线程在下一页
+      边界收到 CancelledError 退出；再等至多 GRACE_REAP_SECONDS 确认退出
+      （回收成功），超上限放弃回收并记录——取消信号已置位，线程最迟在下一
+      检查点退出。
+    - babeldoc 路线：其 async_translate 会吞 CancelledError 并无界等待内部
+      worker，直接 wait_for 会被拖着无上限，改用「主超时 + 回收上限」两段
+      有界等待（见 _run_babeldoc_with_timeout）。
+    调用方传入的 out_dir 是本次尝试的隔离子目录（见
+    translate_pdf_with_fallback），被放弃线程的残留写入不会交叉污染。
     """
     os.makedirs(out_dir, exist_ok=True)
-    _clean_stale_outputs(out_dir, pdf_path)
     attempt_path = _prepare_pdf2zh_input(pdf_path, out_dir)
     start = time.monotonic()
     try:
         if mode == "babeldoc":
-            result_path = await asyncio.wait_for(
-                _run_babeldoc(attempt_path, out_dir, config, target_lang),
-                timeout=timeout,
+            result_path = await _run_babeldoc_with_timeout(
+                attempt_path, out_dir, config, target_lang, timeout
             )
         else:
             from pdf2zh import translate  # 延迟导入，配合 find_spec
@@ -224,16 +246,34 @@ async def run_pdf2zh_cli(
             elif mode == "compatible_skip_subset":
                 kwargs["compatible"] = True
                 kwargs["skip_subset_fonts"] = True
-            await asyncio.wait_for(
-                asyncio.to_thread(translate, **kwargs), timeout=timeout
-            )
+
+            # set() 在事件循环线程调用；is_set() 由工作线程在页边界轮询，
+            # 只读布尔值，跨线程安全
+            cancel_event = asyncio.Event()
+            finished = threading.Event()
+
+            def _runner() -> None:
+                try:
+                    translate(cancellation_event=cancel_event, **kwargs)
+                finally:
+                    finished.set()
+
+            try:
+                await asyncio.wait_for(asyncio.to_thread(_runner), timeout=timeout)
+            except asyncio.TimeoutError:
+                cancel_event.set()
+                reap_start = time.monotonic()
+                exited = await asyncio.to_thread(finished.wait, GRACE_REAP_SECONDS)
+                raise _AttemptTimeout(
+                    _timeout_msg(timeout, exited, time.monotonic() - reap_start)
+                )
             result_path = _find_output(out_dir, pdf_path)
         if not result_path:
             raise RuntimeError("pdf2zh 未生成结果文件")
         _log_attempt(mode, time.monotonic() - start, True, None)
         return True, result_path, None
-    except asyncio.TimeoutError:
-        msg = f"超时（{timeout:.0f}s）"
+    except _AttemptTimeout as e:
+        msg = str(e)
         _log_attempt(mode, time.monotonic() - start, False, msg)
         return False, None, msg
     except Exception as e:  # noqa: BLE001
@@ -244,6 +284,39 @@ async def run_pdf2zh_cli(
 
 def _noop_cb(*args, **kwargs) -> None:
     pass
+
+
+async def _run_babeldoc_with_timeout(
+    pdf_path: str,
+    out_dir: str,
+    config: LLMConfig,
+    target_lang: str,
+    timeout: float,
+) -> str:
+    """有界等待的 babeldoc 尝试。
+
+    不能直接 wait_for：babeldoc 的 async_translate 捕获 CancelledError 后
+    `await finish_event.wait()` 等内部 worker 收尾，吞掉取消后外层等待没有
+    上限。这里两段等待：主超时 → 取消 → 至多再等 GRACE_REAP_SECONDS →
+    仍不退出则放弃回收（记录）。放弃后任务继续收尾，其写入限于本次尝试
+    的隔离目录；babeldoc 内部会按自己的 cancel 检查点停下。
+    """
+    task = asyncio.create_task(_run_babeldoc(pdf_path, out_dir, config, target_lang))
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if done:
+        return task.result()  # 内部异常抛给调用方统一记日志
+
+    task.cancel()
+    reap_start = time.monotonic()
+    done, _ = await asyncio.wait({task}, timeout=GRACE_REAP_SECONDS)
+    exited = bool(done)
+    if not exited:
+        # 放弃的任务最终收尾时可能带异常，取走以免
+        # "Task exception was never retrieved" 警告
+        task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
+    raise _AttemptTimeout(_timeout_msg(timeout, exited, time.monotonic() - reap_start))
 
 
 async def _run_babeldoc(pdf_path: str, out_dir: str, config: LLMConfig, target_lang: str) -> str:
@@ -396,18 +469,8 @@ def _which_first(names: list) -> Optional[str]:
 
 def _overlay_font_path() -> Optional[str]:
     """返回可嵌入 PDF 的中文字体路径。"""
-    candidates = (
-        r"C:\Windows\Fonts\msyh.ttc",      # Microsoft YaHei
-        r"C:\Windows\Fonts\simsun.ttc",    # SimSun
-        r"C:\Windows\Fonts\simhei.ttf",    # SimHei
-        r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
-        r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf",
-        r"C:\Windows\Fonts\STSONG.TTF",
-    )
-    for font_path in candidates:
-        if os.path.exists(font_path):
-            return font_path
-    return None
+    from app.services.fonts import resolve_cjk_font_path
+    return resolve_cjk_font_path()
 
 
 def _page_text_blocks(page) -> list[tuple[object, str]]:
@@ -540,26 +603,65 @@ def _draw_overlay_text(page, rect, text: str, font_name: str) -> None:
         page.draw_rect(bg, color=None, fill=(1, 1, 1), fill_opacity=0.96, overlay=True)
 
 
+def _draw_overlay_page_blocks(
+    page, blocks: list, translations: list[str], font_name: str
+) -> None:
+    """在一页上绘制全部译文块（同步重活，由调用方放进工作线程执行）。"""
+    for (rect, _), zh in zip(blocks, translations):
+        if zh.strip():
+            _draw_overlay_text(page, rect, zh.strip(), font_name)
+
+
+def _import_fitz():
+    """导入 PyMuPDF 并返回模块。
+
+    冻结打包后首次导入可达 1~2s，放进工作线程避免阻塞事件循环。
+    """
+    import fitz
+
+    return fitz
+
+
 async def generate_overlay_translation(
     pdf_path: str,
     out_dir: str,
     config: LLMConfig,
+    *,
+    fallback: bool = False,
 ) -> AsyncGenerator[TranslateProgress, None]:
-    """覆盖译文 PDF：保留原页面图像/figure，只覆盖可识别文本块。"""
-    yield TranslateProgress(0.65, "切换为覆盖翻译模式...", mode="fallback")
+    """覆盖译文 PDF：保留原页面图像/figure，只覆盖可识别文本块。
+
+    所有同步重调用（fitz 导入/解析/逐页提取/字体注册/绘制/子集化/保存）一律
+    `await asyncio.to_thread(...)` 下放工作线程，否则事件循环被长时间独占，
+    /api/health 无法响应，前端会把后端误判为「离线」。
+    线程安全说明：每次 to_thread 都 await 完成后才有下一次，同一 fitz Document
+    只会被串行访问（PyMuPDF 禁止同一文档跨线程并发使用，串行是允许的）；
+    不要在本生成器内并发操作同一 doc。
+    """
+    progress_base = 0.65 if fallback else 0.0
+    progress_span = 0.33 if fallback else 0.98
+    yield TranslateProgress(
+        progress_base,
+        "切换为覆盖翻译模式..." if fallback else "正在准备覆盖翻译...",
+        mode="fallback",
+    )
 
     try:
-        import fitz
+        fitz = await asyncio.to_thread(_import_fitz)
     except Exception as e:  # noqa: BLE001
         _logger.info("PyMuPDF 不可用，改为纯文本译文模式: %s", e)
-        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+        async for p in generate_text_only_translation(
+            pdf_path, out_dir, config, fallback=fallback
+        ):
             yield p
         return
 
     font_path = _overlay_font_path()
     if not font_path:
         _logger.info("未找到可嵌入中文字体，改为纯文本译文模式")
-        async for p in generate_text_only_translation(pdf_path, out_dir, config):
+        async for p in generate_text_only_translation(
+            pdf_path, out_dir, config, fallback=fallback
+        ):
             yield p
         return
 
@@ -567,40 +669,46 @@ async def generate_overlay_translation(
     base = os.path.splitext(os.path.basename(pdf_path))[0]
     result_path = os.path.join(out_dir, f"{base}-zh.pdf")
     svc = LLMService(config)
-    doc = fitz.open(pdf_path)
+    doc = await asyncio.to_thread(fitz.open, pdf_path)
     total = max(len(doc), 1)
     font_name = "AppOverlayCJK"
 
     try:
         for i, page in enumerate(doc):
-            blocks = _page_text_blocks(page)
+            blocks = await asyncio.to_thread(_page_text_blocks, page)
             texts = [text for _, text in blocks]
             translations = await _translate_overlay_blocks(svc, texts)
             try:
-                page.insert_font(fontname=font_name, fontfile=font_path)
+                await asyncio.to_thread(
+                    page.insert_font, fontname=font_name, fontfile=font_path
+                )
             except Exception as e:  # noqa: BLE001
                 _logger.info("注册覆盖字体失败: %s", e)
                 raise
-            for (rect, _), zh in zip(blocks, translations):
-                if zh.strip():
-                    _draw_overlay_text(page, rect, zh.strip(), font_name)
+            await asyncio.to_thread(
+                _draw_overlay_page_blocks, page, blocks, translations, font_name
+            )
             yield TranslateProgress(
-                0.65 + (i + 1) / total * 0.33,
+                progress_base + (i + 1) / total * progress_span,
                 f"覆盖翻译第 {i + 1}/{total} 页...",
                 mode="fallback",
             )
 
         try:
-            doc.subset_fonts()
+            await asyncio.to_thread(doc.subset_fonts)
         except Exception as e:  # noqa: BLE001
             _logger.info("覆盖译文 PDF 字体子集化失败，继续保存: %s", e)
-        doc.save(result_path, garbage=4, deflate=True)
+        await asyncio.to_thread(doc.save, result_path, garbage=4, deflate=True)
     finally:
         doc.close()
 
     yield TranslateProgress(
         1.0,
-        "完整排版翻译失败，已切换为覆盖翻译模式（figure 保留原样）",
+        (
+            "完整排版翻译失败，已切换为覆盖翻译模式（figure 保留原样）"
+            if fallback
+            else "覆盖翻译完成（figure 保留原样）"
+        ),
         done=True,
         result_path=result_path,
         mode="fallback",
@@ -612,14 +720,25 @@ async def generate_text_only_translation(
     pdf_path: str,
     out_dir: str,
     config: LLMConfig,
+    *,
+    fallback: bool = True,
 ) -> AsyncGenerator[TranslateProgress, None]:
     """纯文本译文 PDF：左侧原 PDF + 右侧按页译文。
 
     不保留排版/公式/图表，仅供快速阅读。所有 pdf2zh 路线都失败时启用。
-    """
-    yield TranslateProgress(0.65, "切换为纯文本译文模式...", mode="fallback")
 
-    pages = extract_text_per_page(pdf_path)
+    全文抽取与 reportlab 写盘均为同步重活，必须经 asyncio.to_thread 下放
+    工作线程，否则事件循环被独占（/api/health 无响应 → 前端误判「离线」）。
+    """
+    progress_base = 0.65 if fallback else 0.0
+    progress_span = 0.33 if fallback else 0.98
+    yield TranslateProgress(
+        progress_base,
+        "切换为纯文本译文模式..." if fallback else "正在生成文本译文...",
+        mode="fallback",
+    )
+
+    pages = await asyncio.to_thread(extract_text_per_page, pdf_path)
     total = len(pages) or 1
     svc = LLMService(config)
     translated_pages: list[str] = []
@@ -634,7 +753,7 @@ async def generate_text_only_translation(
             zh = "[本页无可提取文本，可能是扫描图片]"
         translated_pages.append(zh)
         yield TranslateProgress(
-            0.65 + (i + 1) / total * 0.33,
+            progress_base + (i + 1) / total * progress_span,
             f"翻译第 {i + 1}/{total} 页...",
             mode="fallback",
         )
@@ -642,11 +761,13 @@ async def generate_text_only_translation(
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.splitext(os.path.basename(pdf_path))[0]
     result_path = os.path.join(out_dir, f"{base}-zh.pdf")
-    _write_text_pdf(translated_pages, result_path)
+    await asyncio.to_thread(_write_text_pdf, translated_pages, result_path)
 
     yield TranslateProgress(
         1.0,
-        "完整排版翻译失败，已切换为右侧译文阅读模式",
+        "完整排版翻译失败，已切换为右侧译文阅读模式"
+        if fallback
+        else "文本译文生成完成",
         done=True,
         result_path=result_path,
         mode="fallback",
@@ -671,7 +792,9 @@ async def translate_pdf_with_fallback(
         model = await asyncio.to_thread(_ensure_model)
     except Exception as e:  # noqa: BLE001
         _logger.warning("模型加载失败，直接覆盖翻译: %s", e)
-        async for p in generate_overlay_translation(pdf_path, out_dir, config):
+        async for p in generate_overlay_translation(
+            pdf_path, out_dir, config, fallback=True
+        ):
             yield p
         return
 
@@ -685,8 +808,11 @@ async def translate_pdf_with_fallback(
     timed_out = False
     for mode, msg, prog in attempts:
         yield TranslateProgress(prog, msg, mode="pdf2zh")
+        # 每次尝试独立子目录（审计 3.1）：超时被放弃的线程只能写进本次目录，
+        # 各尝试产物互不串扰，也免去清理上一次残留的逻辑
+        attempt_dir = os.path.join(out_dir, f"attempt-{mode}")
         ok, result, err = await run_pdf2zh_cli(
-            pdf_path, out_dir, config, target_lang, mode=mode, model=model,
+            pdf_path, attempt_dir, config, target_lang, mode=mode, model=model,
         )
         if ok and result:
             yield TranslateProgress(
@@ -707,8 +833,10 @@ async def translate_pdf_with_fallback(
                 ("compatible_skip_subset", "正在用兼容副本重试...", 0.55),
             ):
                 yield TranslateProgress(prog, msg, mode="pdf2zh")
+                # 修复副本的尝试同样用独立子目录（与首轮尝试区分开）
+                attempt_dir = os.path.join(out_dir, f"repaired-{mode}")
                 ok, result, err = await run_pdf2zh_cli(
-                    repaired, out_dir, config, target_lang, mode=mode, model=model,
+                    repaired, attempt_dir, config, target_lang, mode=mode, model=model,
                 )
                 if ok and result:
                     try:
@@ -726,7 +854,9 @@ async def translate_pdf_with_fallback(
                 pass
 
     # 9. 全失败 → 覆盖翻译模式
-    async for p in generate_overlay_translation(pdf_path, out_dir, config):
+    async for p in generate_overlay_translation(
+        pdf_path, out_dir, config, fallback=True
+    ):
         yield p
 
 
@@ -743,7 +873,9 @@ async def translate_pdf(
         async for p in translate_pdf_with_fallback(pdf_path, out_dir, config, target_lang):
             yield p
     else:
-        async for p in generate_overlay_translation(pdf_path, out_dir, config):
+        async for p in generate_overlay_translation(
+            pdf_path, out_dir, config, fallback=True
+        ):
             yield p
 
 
@@ -756,25 +888,20 @@ def _register_text_pdf_font() -> str:
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.pdfbase.ttfonts import TTFont
 
+    from app.services.fonts import iter_cjk_font_candidates
+
     font_name = "AppFallbackCJK"
-    candidates = (
-        (r"C:\Windows\Fonts\msyh.ttc", 0),      # Microsoft YaHei
-        (r"C:\Windows\Fonts\simsun.ttc", 0),    # SimSun
-        (r"C:\Windows\Fonts\simhei.ttf", 0),    # SimHei
-        (r"C:\Windows\Fonts\NotoSansSC-VF.ttf", 0),
-        (r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf", 0),
-        (r"C:\Windows\Fonts\STSONG.TTF", 0),
-    )
-    for font_path, subfont_index in candidates:
+    # 集合字体路径来自 fonts 模块（跨平台）；ttc 一律取 subfontIndex=0。
+    for font_path in iter_cjk_font_candidates():
         if not os.path.exists(font_path):
             continue
         try:
             pdfmetrics.registerFont(
-                TTFont(font_name, font_path, subfontIndex=subfont_index)
+                TTFont(font_name, font_path, subfontIndex=0)
             )
             return font_name
         except Exception as e:  # noqa: BLE001
-            _logger.info("注册降级 PDF 字体失败 %s: %s", font_path, e)
+            _logger.warning("注册降级 PDF 字体失败 %s: %s", font_path, e)
 
     # 最后兜底：可提取文字，但部分 pdf.js 环境可能需要 CMap 才能显示。
     pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
@@ -794,15 +921,20 @@ def _write_text_pdf(pages: list[str], out_path: str) -> None:
         font_name = _register_text_pdf_font()
         c = canvas.Canvas(out_path, pagesize=A4)
         width, height = A4
+        margin = 40
+        font_size = 10
+        # 按实际绘制宽度折行（旧实现固定 90 字符：中文全宽 10pt/字 → 900pt，
+        # 远超 A4 可用宽度 ~515pt，半行文字被裁掉）
+        draw_width = width - margin * 2
         for page_text in pages:
-            c.setFont(font_name, 10)
-            y = height - 40
-            for line in _wrap_lines(page_text, 90):
-                if y < 40:
+            c.setFont(font_name, font_size)
+            y = height - margin
+            for line in _wrap_lines_by_width(page_text, font_name, font_size, draw_width):
+                if y < margin:
                     c.showPage()
-                    c.setFont(font_name, 10)
-                    y = height - 40
-                c.drawString(40, y, line)
+                    c.setFont(font_name, font_size)
+                    y = height - margin
+                c.drawString(margin, y, line)
                 y -= 14
             c.showPage()
         c.save()
@@ -810,12 +942,31 @@ def _write_text_pdf(pages: list[str], out_path: str) -> None:
         raise RuntimeError(f"生成降级 PDF 失败: {e}") from e
 
 
-def _wrap_lines(text: str, width: int) -> list[str]:
-    """简单按宽度折行。"""
+def _est_char_width(ch: str, font_size: float) -> float:
+    """估算单字符宽度：CJK/全角约等于字号，拉丁字符约为字号的 55%。"""
+    return font_size if ord(ch) > 0x2E7F else font_size * 0.55
+
+
+def _wrap_lines_by_width(
+    text: str, font_name: str, font_size: float, max_width: float
+) -> list[str]:
+    """按绘制宽度折行：优先用 pdfmetrics 实测，失败退化为字符宽度估算。"""
+    from reportlab.pdfbase import pdfmetrics
+
+    def measure(s: str) -> float:
+        try:
+            return pdfmetrics.stringWidth(s, font_name, font_size)
+        except Exception:  # noqa: BLE001
+            return sum(_est_char_width(c, font_size) for c in s)
+
     out: list[str] = []
     for raw in text.split("\n"):
-        while len(raw) > width:
-            out.append(raw[:width])
-            raw = raw[width:]
-        out.append(raw)
+        line = ""
+        for ch in raw:
+            if line and measure(line + ch) > max_width:
+                out.append(line)
+                line = ch
+            else:
+                line += ch
+        out.append(line)
     return out

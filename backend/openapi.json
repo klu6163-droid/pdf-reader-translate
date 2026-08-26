@@ -1,0 +1,2152 @@
+{
+  "components": {
+    "schemas": {
+      "AnalyzePdfResponse": {
+        "properties": {
+          "edit_id": {
+            "title": "Edit Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "text",
+              "compatible"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "mode_label": {
+            "title": "Mode Label",
+            "type": "string"
+          },
+          "page_count": {
+            "title": "Page Count",
+            "type": "integer"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/EditPage"
+            },
+            "title": "Pages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "edit_id",
+          "mode",
+          "mode_label",
+          "page_count",
+          "pages"
+        ],
+        "title": "AnalyzePdfResponse",
+        "type": "object"
+      },
+      "AnnotationBody": {
+        "properties": {
+          "color": {
+            "default": "#ffd633",
+            "title": "Color",
+            "type": "string"
+          },
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "ink": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ink"
+          },
+          "page": {
+            "default": 0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "quads": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quads"
+          },
+          "rect": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rect"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "user",
+            "title": "Source"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "default": "highlight",
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "xref": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xref"
+          }
+        },
+        "title": "AnnotationBody",
+        "type": "object"
+      },
+      "AnnotationListResponse": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationResponse"
+            },
+            "title": "Annotations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "annotations"
+        ],
+        "title": "AnnotationListResponse",
+        "type": "object"
+      },
+      "AnnotationPage": {
+        "properties": {
+          "height": {
+            "title": "Height",
+            "type": "number"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "width": {
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "page",
+          "width",
+          "height"
+        ],
+        "title": "AnnotationPage",
+        "type": "object"
+      },
+      "AnnotationPatch": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "ink": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ink"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "quads": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quads"
+          },
+          "rect": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rect"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "AnnotationPatch",
+        "type": "object"
+      },
+      "AnnotationResponse": {
+        "properties": {
+          "color": {
+            "default": "#ffd633",
+            "title": "Color",
+            "type": "string"
+          },
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ink": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ink"
+          },
+          "page": {
+            "default": 0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "quads": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quads"
+          },
+          "rect": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rect"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "pdf"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "highlight",
+              "underline",
+              "strikeout",
+              "note",
+              "rectangle",
+              "ink"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "xref": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xref"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "source"
+        ],
+        "title": "AnnotationResponse",
+        "type": "object"
+      },
+      "Body_analyze_api_edit_pdf_analyze_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_analyze_api_edit_pdf_analyze_post",
+        "type": "object"
+      },
+      "Body_open_pdf_api_annot_pdf_open_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_open_pdf_api_annot_pdf_open_post",
+        "type": "object"
+      },
+      "Body_start_overlay_translate_api_overlay_pdf_start_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_start_overlay_translate_api_overlay_pdf_start_post",
+        "type": "object"
+      },
+      "Body_start_pdf_translate_api_translate_pdf_start_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          },
+          "target_lang": {
+            "default": "zh",
+            "title": "Target Lang",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_start_pdf_translate_api_translate_pdf_start_post",
+        "type": "object"
+      },
+      "Body_summary_stream_api_summary_stream_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_summary_stream_api_summary_stream_post",
+        "type": "object"
+      },
+      "DeleteAnnotationResponse": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "DeleteAnnotationResponse",
+        "type": "object"
+      },
+      "EditBlock": {
+        "properties": {
+          "bbox": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Bbox",
+            "type": "array"
+          },
+          "bold": {
+            "title": "Bold",
+            "type": "boolean"
+          },
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "font": {
+            "title": "Font",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "italic": {
+            "title": "Italic",
+            "type": "boolean"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "page",
+          "text",
+          "bbox",
+          "font",
+          "size",
+          "color",
+          "bold",
+          "italic"
+        ],
+        "title": "EditBlock",
+        "type": "object"
+      },
+      "EditOp": {
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "deleted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": false,
+            "title": "Deleted"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "EditOp",
+        "type": "object"
+      },
+      "EditPage": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/EditBlock"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "height": {
+            "title": "Height",
+            "type": "number"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "width": {
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "page",
+          "width",
+          "height",
+          "blocks"
+        ],
+        "title": "EditPage",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LLMConfig": {
+        "description": "OpenAI-compatible LLM 配置。API Key 由前端每次请求携带，绝不写死。",
+        "properties": {
+          "api_key": {
+            "description": "API 密钥",
+            "title": "Api Key",
+            "type": "string"
+          },
+          "base_url": {
+            "default": "https://api.openai.com/v1",
+            "description": "OpenAI-compatible Base URL",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "model": {
+            "default": "gpt-4o-mini",
+            "description": "模型名称",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "LLMConfig",
+        "type": "object"
+      },
+      "OpenAnnotationsResponse": {
+        "properties": {
+          "annot_id": {
+            "title": "Annot Id",
+            "type": "string"
+          },
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationResponse"
+            },
+            "title": "Annotations",
+            "type": "array"
+          },
+          "page_count": {
+            "title": "Page Count",
+            "type": "integer"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationPage"
+            },
+            "title": "Pages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "annot_id",
+          "page_count",
+          "pages",
+          "annotations"
+        ],
+        "title": "OpenAnnotationsResponse",
+        "type": "object"
+      },
+      "SaveAnnotationsRequest": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationBody"
+            },
+            "title": "Annotations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "annotations"
+        ],
+        "title": "SaveAnnotationsRequest",
+        "type": "object"
+      },
+      "SaveAnnotationsResponse": {
+        "properties": {
+          "deleted_existing": {
+            "title": "Deleted Existing",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "written": {
+            "title": "Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "written",
+          "skipped",
+          "deleted_existing",
+          "message"
+        ],
+        "title": "SaveAnnotationsResponse",
+        "type": "object"
+      },
+      "SaveEditsRequest": {
+        "properties": {
+          "edit_id": {
+            "title": "Edit Id",
+            "type": "string"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/EditOp"
+            },
+            "title": "Edits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "edit_id",
+          "edits"
+        ],
+        "title": "SaveEditsRequest",
+        "type": "object"
+      },
+      "SaveEditsResponse": {
+        "properties": {
+          "edit_id": {
+            "title": "Edit Id",
+            "type": "string"
+          },
+          "edited": {
+            "title": "Edited",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "text",
+              "compatible"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "mode_label": {
+            "title": "Mode Label",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "edit_id",
+          "mode",
+          "mode_label",
+          "edited",
+          "message"
+        ],
+        "title": "SaveEditsResponse",
+        "type": "object"
+      },
+      "StartTaskResponse": {
+        "properties": {
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "StartTaskResponse",
+        "type": "object"
+      },
+      "TermsExplainRequest": {
+        "description": "术语解释请求；通过本地后端代理，不由浏览器直连上游。",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/LLMConfig"
+          },
+          "text": {
+            "description": "待识别专业术语的原文",
+            "maxLength": 4000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "config"
+        ],
+        "title": "TermsExplainRequest",
+        "type": "object"
+      },
+      "TermsExplainResponse": {
+        "properties": {
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "terms": {
+            "title": "Terms",
+            "type": "string"
+          }
+        },
+        "required": [
+          "terms",
+          "model"
+        ],
+        "title": "TermsExplainResponse",
+        "type": "object"
+      },
+      "TestConfigRequest": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/LLMConfig"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "title": "TestConfigRequest",
+        "type": "object"
+      },
+      "TestConfigResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "TestConfigResponse",
+        "type": "object"
+      },
+      "TextTranslateRequest": {
+        "description": "划词 / 划段落翻译请求。",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/LLMConfig"
+          },
+          "source_lang": {
+            "default": "auto",
+            "description": "源语言",
+            "title": "Source Lang",
+            "type": "string"
+          },
+          "target_lang": {
+            "default": "中文",
+            "description": "目标语言",
+            "title": "Target Lang",
+            "type": "string"
+          },
+          "text": {
+            "description": "待翻译文本",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "config"
+        ],
+        "title": "TextTranslateRequest",
+        "type": "object"
+      },
+      "TextTranslateResponse": {
+        "properties": {
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "original": {
+            "title": "Original",
+            "type": "string"
+          },
+          "translated": {
+            "title": "Translated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "original",
+          "translated",
+          "model"
+        ],
+        "title": "TextTranslateResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "PDF 阅读翻译后端",
+    "version": "0.2.2"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/annot/pdf/open": {
+      "post": {
+        "description": "上传 PDF 建立批注会话；返回 annot_id、页尺寸与 PDF 内已有批注。",
+        "operationId": "open_pdf_api_annot_pdf_open_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_open_pdf_api_annot_pdf_open_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAnnotationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Pdf",
+        "tags": [
+          "pdf-annot"
+        ]
+      }
+    },
+    "/api/annot/pdf/{annot_id}/annotations": {
+      "get": {
+        "operationId": "list_annotations_api_annot_pdf__annot_id__annotations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Annotations",
+        "tags": [
+          "pdf-annot"
+        ]
+      },
+      "post": {
+        "operationId": "add_annotation_api_annot_pdf__annot_id__annotations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Annotation",
+        "tags": [
+          "pdf-annot"
+        ]
+      }
+    },
+    "/api/annot/pdf/{annot_id}/annotations/{aid}": {
+      "delete": {
+        "operationId": "delete_annotation_api_annot_pdf__annot_id__annotations__aid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "aid",
+            "required": true,
+            "schema": {
+              "title": "Aid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteAnnotationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Annotation",
+        "tags": [
+          "pdf-annot"
+        ]
+      },
+      "put": {
+        "operationId": "update_annotation_api_annot_pdf__annot_id__annotations__aid__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "aid",
+            "required": true,
+            "schema": {
+              "title": "Aid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Annotation",
+        "tags": [
+          "pdf-annot"
+        ]
+      }
+    },
+    "/api/annot/pdf/{annot_id}/export": {
+      "get": {
+        "operationId": "export_annotations_api_annot_pdf__annot_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Annotations",
+        "tags": [
+          "pdf-annot"
+        ]
+      }
+    },
+    "/api/annot/pdf/{annot_id}/result": {
+      "get": {
+        "operationId": "download_result_api_annot_pdf__annot_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Result",
+        "tags": [
+          "pdf-annot"
+        ]
+      }
+    },
+    "/api/annot/pdf/{annot_id}/save": {
+      "post": {
+        "description": "把批注写入 PDF 副本，另存 annotated.pdf。body 带完整列表（前端为准）。",
+        "operationId": "save_annotated_api_annot_pdf__annot_id__save_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annot_id",
+            "required": true,
+            "schema": {
+              "title": "Annot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAnnotationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveAnnotationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Annotated",
+        "tags": [
+          "pdf-annot"
+        ]
+      }
+    },
+    "/api/diagnostics/status": {
+      "get": {
+        "operationId": "diagnostic_status_api_diagnostics_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Diagnostic Status Api Diagnostics Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Diagnostic Status",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/edit/pdf/analyze": {
+      "post": {
+        "description": "上传 PDF，解析每页文本块，返回 edit_id + 文本块 + 预测编辑模式。",
+        "operationId": "analyze_api_edit_pdf_analyze_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_api_edit_pdf_analyze_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzePdfResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze",
+        "tags": [
+          "pdf-edit"
+        ]
+      }
+    },
+    "/api/edit/pdf/result/{edit_id}": {
+      "get": {
+        "description": "下载编辑后的新 PDF。",
+        "operationId": "result_api_edit_pdf_result__edit_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edit_id",
+            "required": true,
+            "schema": {
+              "title": "Edit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Result",
+        "tags": [
+          "pdf-edit"
+        ]
+      }
+    },
+    "/api/edit/pdf/save": {
+      "post": {
+        "description": "应用编辑并另存为新 PDF。返回实际编辑模式与友好提示。",
+        "operationId": "save_api_edit_pdf_save_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEditsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveEditsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save",
+        "tags": [
+          "pdf-edit"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/overlay/pdf/progress/{task_id}": {
+      "get": {
+        "description": "SSE 进度流：每连接独立订阅，多并发连接各自收到全量事件（审计 3.2）。",
+        "operationId": "overlay_progress_api_overlay_pdf_progress__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overlay Progress",
+        "tags": [
+          "overlay-translate"
+        ]
+      }
+    },
+    "/api/overlay/pdf/result/{task_id}": {
+      "get": {
+        "description": "下载覆盖翻译后的 PDF。",
+        "operationId": "overlay_result_api_overlay_pdf_result__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overlay Result",
+        "tags": [
+          "overlay-translate"
+        ]
+      }
+    },
+    "/api/overlay/pdf/start": {
+      "post": {
+        "description": "接收 PDF，创建覆盖翻译任务（跳过 pdf2zh），立即返回 task_id。",
+        "operationId": "start_overlay_translate_api_overlay_pdf_start_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-llm-api-key",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Llm-Api-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-base-url",
+            "required": false,
+            "schema": {
+              "default": "https://api.openai.com/v1",
+              "title": "X-Llm-Base-Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-model",
+            "required": false,
+            "schema": {
+              "default": "gpt-4o-mini",
+              "title": "X-Llm-Model",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_start_overlay_translate_api_overlay_pdf_start_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Overlay Translate",
+        "tags": [
+          "overlay-translate"
+        ]
+      }
+    },
+    "/api/settings/test": {
+      "post": {
+        "description": "测试 API 配置是否可用。",
+        "operationId": "settings_test_api_settings_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Settings Test",
+        "tags": [
+          "translate"
+        ]
+      }
+    },
+    "/api/summary/stream": {
+      "post": {
+        "description": "一次性接收 PDF，提取全文后流式返回结构化中文总结。",
+        "operationId": "summary_stream_api_summary_stream_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-llm-api-key",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Llm-Api-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-base-url",
+            "required": false,
+            "schema": {
+              "default": "https://api.openai.com/v1",
+              "title": "X-Llm-Base-Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-model",
+            "required": false,
+            "schema": {
+              "default": "gpt-4o-mini",
+              "title": "X-Llm-Model",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_summary_stream_api_summary_stream_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Summary Stream",
+        "tags": [
+          "summary"
+        ]
+      }
+    },
+    "/api/translate/pdf/progress/{task_id}": {
+      "get": {
+        "description": "SSE 进度流：每连接独立订阅，多并发连接各自收到全量事件（审计 3.2）。",
+        "operationId": "pdf_progress_api_translate_pdf_progress__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pdf Progress",
+        "tags": [
+          "pdf-translate"
+        ]
+      }
+    },
+    "/api/translate/pdf/result/{task_id}": {
+      "get": {
+        "description": "下载翻译后的 PDF。",
+        "operationId": "pdf_result_api_translate_pdf_result__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pdf Result",
+        "tags": [
+          "pdf-translate"
+        ]
+      }
+    },
+    "/api/translate/pdf/start": {
+      "post": {
+        "description": "接收 PDF，创建翻译任务，立即返回 task_id。",
+        "operationId": "start_pdf_translate_api_translate_pdf_start_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-llm-api-key",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Llm-Api-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-base-url",
+            "required": false,
+            "schema": {
+              "default": "https://api.openai.com/v1",
+              "title": "X-Llm-Base-Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-llm-model",
+            "required": false,
+            "schema": {
+              "default": "gpt-4o-mini",
+              "title": "X-Llm-Model",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_start_pdf_translate_api_translate_pdf_start_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Pdf Translate",
+        "tags": [
+          "pdf-translate"
+        ]
+      }
+    },
+    "/api/translate/terms": {
+      "post": {
+        "description": "专业术语解释；由本地后端代理调用上游 LLM。",
+        "operationId": "explain_terms_api_translate_terms_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermsExplainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermsExplainResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Explain Terms",
+        "tags": [
+          "translate"
+        ]
+      }
+    },
+    "/api/translate/text": {
+      "post": {
+        "description": "划词 / 划段落翻译。",
+        "operationId": "translate_text_api_translate_text_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextTranslateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextTranslateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Translate Text",
+        "tags": [
+          "translate"
+        ]
+      }
+    }
+  }
+}

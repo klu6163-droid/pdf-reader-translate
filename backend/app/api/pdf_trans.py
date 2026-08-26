@@ -18,6 +18,8 @@ from app.services.file_utils import (
     scoped_path,
 )
 from app.services.task_manager import task_manager
+from app.services.diagnostics import start_translation
+from app.middlewares import heavy_task_gate
 
 router = APIRouter(prefix="/api/translate/pdf", tags=["pdf-translate"])
 
@@ -47,26 +49,34 @@ async def start_pdf_translate(
 
     config = LLMConfig(api_key=api_key, base_url=base_url, model=model)
     out_dir = scoped_path(WORK_DIR, task.id)
+    trace = start_translation("pdf", task.id)
 
     async def _run() -> None:
+        succeeded = False
+        final_mode = "pdf"
         try:
-            async for prog in pdf_service.translate_pdf(
-                upload_path, out_dir, config, target_lang
-            ):
-                event = {
-                    "progress": round(prog.progress, 4),
-                    "message": prog.message,
-                    "mode": prog.mode,
-                    "done": prog.done,
-                    "error": prog.error,
-                }
-                await task_manager.push(task.id, event)
-                if prog.done:
-                    task_manager.finish(
-                        task.id,
-                        result=prog.result_path,
-                        error=prog.message if prog.error else None,
-                    )
+            # 重任务闸门：限制同时进行的翻译任务数，避免 CPU/内存打爆。
+            async with heavy_task_gate:
+                async for prog in pdf_service.translate_pdf(
+                    upload_path, out_dir, config, target_lang
+                ):
+                    if prog.mode:
+                        final_mode = prog.mode
+                    event = {
+                        "progress": round(prog.progress, 4),
+                        "message": prog.message,
+                        "mode": prog.mode,
+                        "done": prog.done,
+                        "error": prog.error,
+                    }
+                    await task_manager.push(task.id, event)
+                    if prog.done:
+                        succeeded = not prog.error
+                        task_manager.finish(
+                            task.id,
+                            result=prog.result_path,
+                            error=prog.message if prog.error else None,
+                        )
         except Exception as e:  # noqa: BLE001
             msg = f"翻译失败: {e}"
             await task_manager.push(
@@ -75,6 +85,7 @@ async def start_pdf_translate(
             )
             task_manager.finish(task.id, error=str(e))
         finally:
+            trace.finish(succeeded, final_mode)
             asyncio.create_task(
                 cleanup_later(
                     [upload_path, out_dir],
@@ -88,11 +99,10 @@ async def start_pdf_translate(
 
 @router.get("/progress/{task_id}")
 async def pdf_progress(task_id: str) -> StreamingResponse:
-    """SSE 进度流。"""
-    task = task_manager.get(task_id)
+    """SSE 进度流：每连接独立订阅，多并发连接各自收到全量事件（审计 3.2）。"""
 
     async def event_gen():
-        if not task:
+        if task_manager.get(task_id) is None:
             event = {
                 "progress": 1.0,
                 "message": "任务不存在或已清理（后端可能已重启），请重新发起全文翻译",
@@ -102,24 +112,10 @@ async def pdf_progress(task_id: str) -> StreamingResponse:
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             return
 
-        if task.finished:
-            event = task.last_event or {
-                "progress": 1.0,
-                "message": task.error or "翻译完成",
-                "done": True,
-                "error": bool(task.error),
-            }
+        # 入场重放 last_event + 实时广播直到 done，由 subscribe_events 统一保证
+        # （重连重放兼容 2.2；finally 退订，客户端断开不泄漏订阅队列）。
+        async for event in task_manager.subscribe_events(task_id, done_message="翻译完成"):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            return
-
-        if task.last_event:
-            yield f"data: {json.dumps(task.last_event, ensure_ascii=False)}\n\n"
-
-        while True:
-            event = await task.queue.get()
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            if event.get("done"):
-                break
 
     return StreamingResponse(
         event_gen(),
