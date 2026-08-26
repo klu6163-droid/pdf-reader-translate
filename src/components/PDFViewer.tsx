@@ -1,5 +1,6 @@
 // PDF.js 渲染器：负责渲染页面、翻页、缩放、滚动、文字选中。
-// 页面容器会一次创建，实际 canvas/textLayer 只在视口附近懒渲染。
+// 页面容器会一次创建；canvas 位图进入预取区（视口 ±900px）才分配，
+// 离开回收区（视口 ±3000px）即释放（保留占位 div），textLayer 同生命周期。
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -59,7 +60,12 @@ export default function PDFViewer({
   const [loading, setLoading] = useState(true);
   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
   const pageElsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  // 当前持有 canvas 位图的页（渲染时加入、回收时移除，非「曾渲染过」的记录）
   const renderedPagesRef = useRef<Set<number>>(new Set());
+  // 页 → 在途渲染任务：回收/重建时 cancel，防止向已释放的位图继续写入
+  const renderTasksRef = useRef<Map<number, pdfjsLib.RenderTask>>(new Map());
+  // 页 → 纪元号：每次渲染/回收递增，令已越过回收点的在途异步流程失效
+  const pageEpochRef = useRef<Map<number, number>>(new Map());
   const currentPageRef = useRef(currentPage);
   // 译文是否跟随原文翻页（ref 形式供 buildPages 读取，避免把它加进 build 依赖触发重建）
   const syncPageRef = useRef(syncPage !== false);
@@ -138,17 +144,45 @@ export default function PDFViewer({
     if (!doc || !container) return;
 
     let cancelled = false;
-    let observer: IntersectionObserver | null = null;
+    let renderObserver: IntersectionObserver | null = null;
+    let evictObserver: IntersectionObserver | null = null;
     container.innerHTML = '';
     pageElsRef.current.clear();
     renderedPagesRef.current.clear();
+    renderTasksRef.current.clear();
+    pageEpochRef.current.clear();
+
+    const bumpEpoch = (pageNumber: number) => {
+      const epoch = (pageEpochRef.current.get(pageNumber) ?? 0) + 1;
+      pageEpochRef.current.set(pageNumber, epoch);
+      return epoch;
+    };
+
+    // 回收一页：释放位图与文本层，保留占位 div（布局与 scrollTop 不变）
+    const evictPage = (pageNumber: number) => {
+      bumpEpoch(pageNumber); // 令在途渲染（若有）越过下一个 alive() 检查即放弃
+      renderTasksRef.current.get(pageNumber)?.cancel();
+      renderTasksRef.current.delete(pageNumber);
+      if (!renderedPagesRef.current.delete(pageNumber)) return;
+      const pageDiv = pageElsRef.current.get(pageNumber);
+      const canvas = pageDiv?.querySelector('canvas');
+      if (canvas) {
+        canvas.width = 0; // 宽高归零即释放位图后备存储
+        canvas.height = 0;
+      }
+      pageDiv?.querySelector('.textLayer')?.replaceChildren();
+      if (import.meta.env.DEV)
+        console.debug(`[PDFViewer:${side}] 持有位图页数=${renderedPagesRef.current.size}`);
+    };
 
     const renderPage = async (pageNumber: number, pageDiv: HTMLDivElement) => {
       if (renderedPagesRef.current.has(pageNumber)) return;
       renderedPagesRef.current.add(pageNumber);
+      const epoch = bumpEpoch(pageNumber);
+      const alive = () => !cancelled && pageEpochRef.current.get(pageNumber) === epoch;
       try {
         const page = await doc.getPage(pageNumber);
-        if (cancelled) return;
+        if (!alive()) return;
         const viewport = page.getViewport({ scale });
         const canvas = pageDiv.querySelector('canvas');
         const textLayerDiv = pageDiv.querySelector<HTMLDivElement>('.textLayer');
@@ -157,6 +191,7 @@ export default function PDFViewer({
         syncPageLayerSize(pageDiv, textLayerDiv, viewport);
         textLayerDiv.replaceChildren();
 
+        // 位图延迟分配：创建时 canvas 无宽高不占显存，进入预取区才在此分配
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
         canvas.style.width = `${viewport.width}px`;
@@ -164,11 +199,20 @@ export default function PDFViewer({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        if (cancelled) return;
+        const task = page.render({ canvasContext: ctx, viewport });
+        renderTasksRef.current.set(pageNumber, task);
+        try {
+          await task.promise;
+        } finally {
+          if (renderTasksRef.current.get(pageNumber) === task) {
+            renderTasksRef.current.delete(pageNumber);
+          }
+        }
+        if (!alive()) return;
 
         try {
           const textContent = await page.getTextContent();
+          if (!alive()) return;
           const lib = pdfjsLib as any;
           if (typeof lib.TextLayer === 'function') {
             const textLayer = new lib.TextLayer({
@@ -177,6 +221,10 @@ export default function PDFViewer({
               viewport,
             });
             await textLayer.render();
+            if (!alive()) {
+              textLayerDiv.replaceChildren(); // 回收发生在渲染途中：清掉迟到写入
+              return;
+            }
             appendEndOfContent(textLayerDiv);
           } else if (typeof lib.renderTextLayer === 'function') {
             await lib.renderTextLayer({
@@ -184,21 +232,26 @@ export default function PDFViewer({
               container: textLayerDiv,
               viewport,
             }).promise;
+            if (!alive()) {
+              textLayerDiv.replaceChildren();
+              return;
+            }
             appendEndOfContent(textLayerDiv);
           }
         } catch {
           /* 文本层渲染失败不影响画面，仅无法选中该页 */
         }
       } catch (e) {
-        if (!cancelled) {
-          setLoadError(`PDF 渲染失败：${e instanceof Error ? e.message : 'worker 可能未正确加载'}`);
-        }
+        if (cancelled) return;
+        // 被回收/缩放重建取消属正常流程，不是错误
+        if (e instanceof Error && e.name === 'RenderingCancelledException') return;
+        setLoadError(`PDF 渲染失败：${e instanceof Error ? e.message : 'worker 可能未正确加载'}`);
       }
     };
 
     const buildPages = async () => {
       try {
-        observer = new IntersectionObserver(
+        renderObserver = new IntersectionObserver(
           (entries) => {
             for (const entry of entries) {
               if (!entry.isIntersecting) continue;
@@ -210,6 +263,19 @@ export default function PDFViewer({
             }
           },
           { root: container, rootMargin: '900px 0px' },
+        );
+        // 回收观察器：离开 ±3000px 窗口即回收位图；
+        // 与渲染区（±900px）之间 2100px 滞回带避免边界抖动
+        evictObserver = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) continue;
+              const pageDiv = entry.target as HTMLDivElement;
+              const pageNumber = Number(pageDiv.dataset.page);
+              if (Number.isFinite(pageNumber)) evictPage(pageNumber);
+            }
+          },
+          { root: container, rootMargin: '3000px 0px' },
         );
 
         for (let i = 1; i <= doc.numPages; i++) {
@@ -224,9 +290,9 @@ export default function PDFViewer({
           pageDiv.style.setProperty('--scale-factor', String(viewport.scale));
           pageDiv.dataset.page = String(i);
 
+          // 只给样式尺寸、不设 width/height 属性：0×0 canvas 不分配位图，
+          // 分配推迟到进入预取区（见 renderPage），否则每页先占 ~2.9MB
           const canvas = document.createElement('canvas');
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
           canvas.style.width = `${viewport.width}px`;
           canvas.style.height = `${viewport.height}px`;
           pageDiv.appendChild(canvas);
@@ -238,7 +304,8 @@ export default function PDFViewer({
 
           container.appendChild(pageDiv);
           pageElsRef.current.set(i, pageDiv);
-          observer.observe(pageDiv);
+          renderObserver.observe(pageDiv);
+          evictObserver.observe(pageDiv);
         }
 
         if (side === 'right' && syncPageRef.current) {
@@ -255,9 +322,15 @@ export default function PDFViewer({
     };
 
     void buildPages();
+    const tasks = renderTasksRef.current; // 局部别名供清理使用（ref 值在清理期可能已变）
+    const epochs = pageEpochRef.current;
     return () => {
       cancelled = true;
-      observer?.disconnect();
+      renderObserver?.disconnect();
+      evictObserver?.disconnect();
+      tasks.forEach((task) => task.cancel());
+      tasks.clear();
+      epochs.clear();
     };
   }, [scale, numPages, side]);
 

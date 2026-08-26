@@ -125,9 +125,10 @@
   降级/覆盖翻译在 async 生成器里直接跑同步重活（全文抽取、fitz 逐页、reportlab 写盘），阻塞整个事件循环 → /api/health 无法响应，前端判「离线」。
   方向：所有同步重调用 `await asyncio.to_thread(…)`（编辑/批注路由已是正确示范）。
 
-- [ ] **3.4 `src/components/PDFViewer.tsx:223-225`（另 :144 已渲染页不回收）**
+- [x] **3.4 `src/components/PDFViewer.tsx:223-225`（另 :144 已渲染页不回收）**
   每页加载即分配 canvas 位图（~2.8MB/页），渲染后永不释放 → 长 PDF × 8 标签页 → GB 级内存。
   方向：canvas 尺寸延迟到进入视口再分配；远离视口的页释放位图保留 div。
+  已修：位图延迟到进入 ±900px 预取区才分配；双 IntersectionObserver，离开 ±3000px 回收区释放位图与文本层、保留占位 div（epoch + RenderTask.cancel 防竞态）。验收（300+ 页滚动内存不随滚动增长）待用户冒烟。
 
 - [ ] **3.5 `src/services/pdf.ts:12, 36`**
   整份 PDF 以 `number[]` JSON 走 IPC：8~16 倍内存放大 + 巨慢序列化（上传上限 200MB）→ 大文件卡死或 OOM。
