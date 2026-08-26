@@ -1,6 +1,7 @@
 """文献总结路由（提取全文 + 流式 LLM 输出）。"""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
