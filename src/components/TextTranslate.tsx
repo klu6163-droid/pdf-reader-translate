@@ -208,17 +208,19 @@ export default function TextTranslate() {
   };
 
   return (
-    <div className="flex flex-col h-full p-4 gap-3 overflow-auto">
+    <div className="flex h-full flex-col gap-3 overflow-auto bg-white p-4">
       {backendOnline === false && (
-        <div className="flex items-start gap-2 p-3 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded">
+        <div className="status-surface status-warning flex items-start gap-2 rounded-control border p-3 text-xs">
           <Languages size={14} className="mt-0.5 shrink-0" />
           <span>后端未连接，划词翻译暂不可用。请在顶栏点「查看说明」启动后端。</span>
         </div>
       )}
 
       {!selection && (
-        <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
-          <Languages size={40} strokeWidth={1} />
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
+          <div className="flex h-14 w-14 items-center justify-center rounded-panel bg-slate-100">
+            <Languages size={30} />
+          </div>
           <p className="text-sm">在左侧 PDF 中选中文字，即可翻译</p>
           {backendOnline && (
             <p className="text-xs text-slate-400">译文下方含术语解释，可复制 / 收藏 / 加笔记</p>
@@ -232,14 +234,14 @@ export default function TextTranslate() {
             <h3 className="text-xs font-medium text-slate-400 mb-1">
               原文（第 {selection.page} 页）
             </h3>
-            <div className="p-3 bg-slate-50 rounded text-sm text-slate-700 whitespace-pre-wrap max-h-40 overflow-auto">
+            <div className="max-h-40 overflow-auto whitespace-pre-wrap rounded-control border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
               {selection.text}
             </div>
           </section>
 
           <section className="flex-1">
             <h3 className="text-xs font-medium text-slate-400 mb-1">中文翻译</h3>
-            <div className="p-3 bg-primary-50 rounded text-sm text-slate-800 whitespace-pre-wrap min-h-[3rem]">
+            <div className="content-surface min-h-[3rem] whitespace-pre-wrap border-primary-100 p-3 text-sm text-slate-800">
               {loading && (
                 <span className="flex items-center gap-2 text-slate-400">
                   <Loader2 className="animate-spin" size={16} /> 翻译中...
@@ -252,31 +254,28 @@ export default function TextTranslate() {
             {/* 译文操作按钮 */}
             {translated && !error && (
               <div className="flex flex-wrap items-center gap-2 mt-2">
-                <button
-                  onClick={copyTranslated}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 text-slate-600"
-                >
+                <button onClick={copyTranslated} className="ui-button min-h-7 px-2.5 py-1 text-xs">
                   {copied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
                   {copied ? '已复制' : '复制译文'}
                 </button>
                 <button
                   onClick={() => selection && doTranslate(selection.text, tab!.id, selection.page)}
                   disabled={loading}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 text-slate-600 disabled:opacity-50"
+                  className="ui-button min-h-7 px-2.5 py-1 text-xs"
                 >
                   <RefreshCw size={13} />
                   重新翻译
                 </button>
                 <button
                   onClick={favorite}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-amber-50 text-amber-600"
+                  className="ui-button ui-button-accent min-h-7 px-2.5 py-1 text-xs"
                 >
                   <Star size={13} />
                   {noted ? '已收藏' : '收藏'}
                 </button>
                 <button
                   onClick={addToNotes}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-200 rounded hover:bg-primary-50 text-primary-700"
+                  className="ui-button ui-button-accent min-h-7 px-2.5 py-1 text-xs"
                 >
                   <NotebookPen size={13} />
                   添加到笔记
@@ -292,7 +291,7 @@ export default function TextTranslate() {
                 <BookOpen size={13} />
                 术语解释
               </h3>
-              <div className="p-3 bg-slate-50 rounded text-sm text-slate-700 whitespace-pre-wrap min-h-[2rem]">
+              <div className="min-h-[2rem] whitespace-pre-wrap rounded-control border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                 {termsLoading && (
                   <span className="flex items-center gap-2 text-slate-400">
                     <Loader2 className="animate-spin" size={14} /> 提取术语中...

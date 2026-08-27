@@ -199,7 +199,7 @@ export default function AnnotPage({
         wrapRef.current = el;
         registerEl(el);
       }}
-      className="relative mx-auto my-3 bg-white shadow-lg"
+      className="pdf-page-surface relative mx-auto my-3 bg-white"
       style={{ width: w, height: h }}
       data-annot-page={info.page}
     >

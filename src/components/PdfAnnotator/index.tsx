@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { AlertCircle, Info, Loader2 } from 'lucide-react';
+import { AlertCircle, Info, Loader2, X } from 'lucide-react';
 import {
   openPdfAnnot,
   addPdfAnnot,
@@ -39,6 +39,7 @@ import AnnotToolbar from './Toolbar';
 import AnnotPage from './AnnotPage';
 import AnnotList from './AnnotList';
 import AnnotInspector from './AnnotInspector';
+import IconButton from '../ui/IconButton';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -287,7 +288,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       const y = a.rect?.[1] ?? a.quads?.[0]?.[1] ?? a.ink?.[0]?.[0]?.[1] ?? 0;
       container.scrollTo({
         top: el.offsetTop + y * scale - 120,
-        behavior: 'smooth',
+        behavior: preferredScrollBehavior(),
       });
       if (a.type === 'note') {
         openNoteEditor(a.id);
@@ -368,7 +369,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
   const selected = annotations.find((a) => a.id === selectedId) ?? null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-800/95">
+    <div className="workspace-overlay fixed inset-0 z-[60] flex flex-col">
       <AnnotToolbar
         name={name}
         tool={tool}
@@ -390,17 +391,21 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
         <div
           className={`flex items-center gap-2 px-4 py-1.5 text-sm shrink-0 ${
             banner.kind === 'ok'
-              ? 'bg-green-50 text-green-700 border-b border-green-200'
+              ? 'status-surface status-success'
               : banner.kind === 'warn'
-                ? 'bg-amber-50 text-amber-700 border-b border-amber-200'
-                : 'bg-sky-50 text-sky-700 border-b border-sky-200'
+                ? 'status-surface status-warning'
+                : 'status-surface status-info'
           }`}
         >
           <Info size={14} className="shrink-0" />
           <span className="flex-1">{banner.text}</span>
-          <button onClick={() => setBanner(null)} className="opacity-60 hover:opacity-100">
-            ✕
-          </button>
+          <IconButton
+            size="sm"
+            label="关闭提示"
+            onClick={() => setBanner(null)}
+            className="opacity-70"
+            icon={<X size={14} />}
+          />
         </div>
       )}
 
@@ -417,7 +422,7 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center p-6">
               <AlertCircle size={40} className="text-red-400" strokeWidth={1.5} />
               <p className="text-sm text-red-200 max-w-md">{error}</p>
-              <button onClick={onClose} className="px-3 py-1.5 text-sm bg-white/90 rounded">
+              <button onClick={onClose} className="ui-button bg-white text-sm">
                 关闭
               </button>
             </div>
@@ -484,4 +489,8 @@ export default function PdfAnnotator({ data, name, initialTool, onClose }: Props
       )}
     </div>
   );
+}
+
+function preferredScrollBehavior(): ScrollBehavior {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 }

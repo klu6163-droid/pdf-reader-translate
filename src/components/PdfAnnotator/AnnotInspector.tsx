@@ -12,7 +12,7 @@ interface Props {
 
 export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Props) {
   return (
-    <div className="absolute bottom-4 left-4 z-30 w-72 bg-white rounded-lg shadow-xl border p-3 space-y-2">
+    <div className="glass-surface-strong absolute bottom-4 left-4 z-30 w-72 space-y-2 rounded-panel p-3">
       <div className="flex items-center gap-2 text-sm">
         <span className="w-3 h-3 rounded-full shrink-0" style={{ background: annot.color }} />
         <span className="font-medium text-slate-700">
@@ -21,7 +21,11 @@ export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Pr
         {annot.source === 'pdf' && (
           <span className="text-[10px] px-1 py-0.5 bg-slate-100 text-slate-500 rounded">原有</span>
         )}
-        <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600">
+        <button
+          onClick={onClose}
+          className="icon-button icon-button-sm ml-auto text-slate-400"
+          aria-label="关闭批注属性"
+        >
           <X size={14} />
         </button>
       </div>
@@ -37,7 +41,7 @@ export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Pr
         onChange={(e) => onPatch({ comment: e.target.value })}
         placeholder="写点批注..."
         autoFocus={annot.type === 'note' && !annot.comment}
-        className="w-full h-16 text-sm border rounded p-1.5 resize-none outline-none focus:border-primary-400"
+        className="field-input h-16 resize-none p-1.5 text-sm"
       />
 
       <div className="flex items-center gap-1.5">
@@ -50,11 +54,13 @@ export default function AnnotInspector({ annot, onPatch, onRemove, onClose }: Pr
               annot.color === c ? 'ring-2 ring-offset-1 ring-slate-400' : 'border-slate-300'
             }`}
             style={{ background: c }}
+            aria-label={`批注颜色 ${c}`}
+            aria-pressed={annot.color === c}
           />
         ))}
         <button
           onClick={onRemove}
-          className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+          className="ui-button ui-button-danger ml-auto min-h-7 px-2 py-1 text-xs"
         >
           <Trash2 size={13} />
           删除

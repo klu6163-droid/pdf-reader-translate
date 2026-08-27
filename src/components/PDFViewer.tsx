@@ -20,10 +20,12 @@ import {
   StickyNote,
   Undo2,
   Redo2,
+  X,
 } from 'lucide-react';
 import { savePdfFile } from '@/services/pdf';
 import { useStore } from '@/store/useSettings';
 import ToolBtn from './shared/ToolBtn';
+import IconButton from './ui/IconButton';
 import type { AnnotTool } from '@/types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -294,7 +296,7 @@ export default function PDFViewer({
           const viewport = page.getViewport({ scale });
 
           const pageDiv = document.createElement('div');
-          pageDiv.className = 'relative mx-auto my-3 shadow bg-white';
+          pageDiv.className = 'pdf-page-surface relative mx-auto my-3 bg-white';
           pageDiv.style.width = `${viewport.width}px`;
           pageDiv.style.height = `${viewport.height}px`;
           pageDiv.style.setProperty('--scale-factor', String(viewport.scale));
@@ -367,7 +369,7 @@ export default function PDFViewer({
     const el = pageElsRef.current.get(currentPage);
     const container = containerRef.current;
     if (el && container) {
-      container.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' });
+      container.scrollTo({ top: el.offsetTop - 12, behavior: preferredScrollBehavior() });
     }
   }, [currentPage, side, numPages, syncPage]);
 
@@ -387,7 +389,7 @@ export default function PDFViewer({
       const el = pageElsRef.current.get(n);
       const container = containerRef.current;
       if (el && container) {
-        container.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' });
+        container.scrollTo({ top: el.offsetTop - 12, behavior: preferredScrollBehavior() });
       }
       onPageChange?.(n);
     },
@@ -507,7 +509,7 @@ export default function PDFViewer({
   return (
     <div className="flex flex-col h-full">
       {/* 顶部工具栏：页码 / 缩放 / 适合宽度 / 搜索 / 导出 */}
-      <div className="flex items-center gap-1.5 px-3 h-10 bg-white border-b text-sm shrink-0 overflow-x-auto whitespace-nowrap">
+      <div className="toolbar-surface flex h-11 shrink-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b px-2.5 text-sm">
         <input
           value={pageInput}
           onChange={(e) => setPageInput(e.target.value.replace(/[^\d]/g, ''))}
@@ -515,30 +517,27 @@ export default function PDFViewer({
             if (e.key === 'Enter') commitPageInput();
           }}
           onBlur={commitPageInput}
-          className="w-10 px-1 py-0.5 text-center border border-slate-200 rounded text-xs"
+          className="toolbar-input w-11 px-1 text-center text-xs tabular-nums"
+          aria-label="当前页码"
           title="跳转到页码（回车）"
         />
         <span className="text-slate-400 text-xs">/ {numPages || '-'}</span>
 
         <span className="w-px h-5 bg-slate-200 mx-1" />
-        <button
+        <IconButton
           onClick={() => setScale((s) => Math.max(0.5, s - 0.15))}
-          className="p-1 hover:bg-slate-100 rounded"
-          title="缩小"
-        >
-          <ZoomOut size={16} />
-        </button>
+          size="sm"
+          label="缩小"
+          icon={<ZoomOut size={16} />}
+        />
         <span className="w-12 text-center text-xs">{Math.round(scale * 100)}%</span>
-        <button
+        <IconButton
           onClick={() => setScale((s) => Math.min(3, s + 0.15))}
-          className="p-1 hover:bg-slate-100 rounded"
-          title="放大"
-        >
-          <ZoomIn size={16} />
-        </button>
-        <button onClick={fitWidth} className="p-1 hover:bg-slate-100 rounded" title="适合宽度">
-          <Maximize2 size={15} />
-        </button>
+          size="sm"
+          label="放大"
+          icon={<ZoomIn size={16} />}
+        />
+        <IconButton onClick={fitWidth} size="sm" label="适合宽度" icon={<Maximize2 size={15} />} />
 
         <span className="w-px h-5 bg-slate-200 mx-1" />
         <input
@@ -548,16 +547,16 @@ export default function PDFViewer({
             if (e.key === 'Enter') runSearch();
           }}
           placeholder="搜索"
-          className="w-24 px-2 py-0.5 border border-slate-200 rounded text-xs"
+          className="toolbar-input w-24 px-2 text-xs"
+          aria-label="搜索 PDF"
         />
-        <button
+        <IconButton
           onClick={runSearch}
           disabled={searching}
-          className="p-1 hover:bg-slate-100 rounded disabled:opacity-50"
-          title="搜索"
-        >
-          {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-        </button>
+          size="sm"
+          label="搜索"
+          icon={searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+        />
         {searchResult && (
           <span className="text-xs text-slate-400 whitespace-nowrap">
             {searchResult.count > 0 ? `${searchResult.count} 处` : '无结果'}
@@ -566,7 +565,7 @@ export default function PDFViewer({
 
         <button
           onClick={handleExport}
-          className="ml-auto flex items-center gap-1 px-2 py-1 text-slate-600 hover:bg-slate-100 rounded"
+          className="ui-button ml-auto min-h-7 px-2 py-1 text-xs"
           title="导出 PDF"
         >
           <Download size={15} />
@@ -578,27 +577,27 @@ export default function PDFViewer({
         {exportError && (
           <div
             role="alert"
-            className="absolute top-3 right-3 z-20 flex items-center gap-2 max-w-sm rounded bg-red-600 px-3 py-2 text-sm text-white shadow-lg"
+            className="absolute top-3 right-3 z-20 flex max-w-sm items-center gap-2 rounded-control bg-red-600 px-3 py-2 text-sm text-white shadow-lg"
           >
             <AlertCircle size={16} className="shrink-0" />
             <span>{exportError}</span>
-            <button
+            <IconButton
+              size="sm"
+              label="关闭导出失败提示"
               onClick={() => setExportError('')}
-              className="ml-1 opacity-80 hover:opacity-100"
-              aria-label="关闭导出失败提示"
-            >
-              ✕
-            </button>
+              className="ml-1 text-white opacity-80"
+              icon={<X size={14} />}
+            />
           </div>
         )}
         {loadError && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100 text-center p-6">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[var(--content-surface-muted)] text-center p-6">
             <AlertCircle size={40} className="text-red-400" strokeWidth={1.5} />
             <p className="text-sm text-red-600 max-w-sm">{loadError}</p>
           </div>
         )}
         {loading && !loadError && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-slate-100 text-slate-400">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-[var(--content-surface-muted)] text-slate-500">
             <Loader2 className="animate-spin" size={28} />
             <p className="text-sm">加载 PDF 中...</p>
           </div>
@@ -610,7 +609,8 @@ export default function PDFViewer({
           onPointerDown={onPanDown}
           onPointerMove={onPanMove}
           onPointerUp={onPanUp}
-          className={`h-full overflow-auto bg-slate-200 px-2 ${
+          onPointerCancel={onPanUp}
+          className={`h-full overflow-auto bg-[var(--workspace-bg)] px-2 ${
             viewMode === 'hand' ? 'cursor-grab mode-hand active:cursor-grabbing' : ''
           }`}
         />
@@ -618,7 +618,7 @@ export default function PDFViewer({
 
       {/* 底部工具栏：选择 / 手型 / 高亮 / 下划线 / 批注 / 笔记 / 撤销 / 重做（仅阅读侧） */}
       {side === 'left' && onOpenAnnot && (
-        <div className="flex items-center gap-0.5 px-2 h-9 bg-white border-t text-slate-600 shrink-0 overflow-x-auto whitespace-nowrap">
+        <div className="toolbar-surface flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto whitespace-nowrap border-t px-2 text-slate-600">
           <ToolBtn
             active={viewMode === 'select'}
             onClick={() => setViewMode('select')}
@@ -702,4 +702,8 @@ function useSelectionReporter(side: 'left' | 'right') {
     },
     [side],
   );
+}
+
+function preferredScrollBehavior(): ScrollBehavior {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 }

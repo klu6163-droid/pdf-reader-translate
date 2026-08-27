@@ -23,23 +23,26 @@ export default function ToolBtn({
   title,
   variant = 'viewer',
 }: ToolBtnProps) {
-  const base = 'flex items-center gap-1 rounded text-xs';
+  const base =
+    'flex min-h-7 items-center gap-1 rounded-control border border-transparent text-xs text-slate-600';
   const padding = variant === 'annotator' ? 'px-1.5 py-1' : 'px-2 py-1';
-  const activeCls =
-    variant === 'annotator' ? 'bg-primary-600 text-white' : 'bg-primary-50 text-primary-600';
-  const inactiveCls = 'text-slate-600 hover:bg-slate-100';
+  const activeCls = 'border-primary-200 bg-white/85 text-primary-700 shadow-sm';
+  const inactiveCls = 'hover:border-slate-200 hover:bg-white/70';
 
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title ?? label}
+      aria-pressed={active}
       className={`${base} ${padding} ${
         active ? activeCls : inactiveCls
       } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
     >
       {icon}
-      {label}
+      <span className={variant === 'annotator' ? 'compact-label' : 'viewer-tool-label'}>
+        {label}
+      </span>
     </button>
   );
 }

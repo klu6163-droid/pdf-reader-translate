@@ -15,6 +15,7 @@ import {
   List,
 } from 'lucide-react';
 import ToolBtn from '../shared/ToolBtn';
+import IconButton from '../ui/IconButton';
 import { PALETTE, type Tool } from './constants';
 
 interface Props {
@@ -49,7 +50,7 @@ export default function AnnotToolbar({
   onClose,
 }: Props) {
   return (
-    <header className="flex items-center gap-2 px-3 h-12 bg-white shrink-0 shadow">
+    <header className="workspace-toolbar flex h-[52px] shrink-0 items-center gap-2 overflow-x-auto px-3">
       <Highlighter size={18} className="text-primary-600 shrink-0" />
       <span className="font-semibold text-slate-800 shrink-0">PDF 批注</span>
       <span className="text-xs text-slate-400 truncate max-w-[160px]">{name}</span>
@@ -118,11 +119,14 @@ export default function AnnotToolbar({
             }`}
             style={{ background: c }}
             title={c}
+            aria-label={`批注颜色 ${c}`}
+            aria-pressed={color === c}
           />
         ))}
         <label
           className="w-[18px] h-[18px] rounded-full border border-slate-300 overflow-hidden cursor-pointer relative"
           title="自定义颜色"
+          aria-label="自定义批注颜色"
         >
           <span
             className="absolute inset-0"
@@ -139,44 +143,33 @@ export default function AnnotToolbar({
 
       {/* 缩放 */}
       <div className="flex items-center gap-0.5 ml-1 pl-2 border-l">
-        <button
+        <IconButton
           onClick={() => onZoom(-0.15)}
-          className="p-1 hover:bg-slate-100 rounded"
-          title="缩小"
-        >
-          <Minus size={14} />
-        </button>
-        <span className="w-10 text-center text-xs">{Math.round(scale * 100)}%</span>
-        <button
-          onClick={() => onZoom(0.15)}
-          className="p-1 hover:bg-slate-100 rounded"
-          title="放大"
-        >
-          <Plus size={14} />
-        </button>
+          size="sm"
+          label="缩小"
+          icon={<Minus size={14} />}
+        />
+        <span className="w-10 text-center text-xs tabular-nums">{Math.round(scale * 100)}%</span>
+        <IconButton onClick={() => onZoom(0.15)} size="sm" label="放大" icon={<Plus size={14} />} />
       </div>
 
       <div className="ml-auto flex items-center gap-2 shrink-0">
-        <button
+        <IconButton
           onClick={onToggleSidebar}
-          className={`p-1.5 rounded ${
-            sidebarOpen ? 'bg-primary-50 text-primary-700' : 'hover:bg-slate-100 text-slate-600'
-          }`}
-          title="批注列表"
-        >
-          <List size={16} />
-        </button>
+          label="批注列表"
+          aria-pressed={sidebarOpen}
+          className={sidebarOpen ? 'border-primary-200 bg-white/85 text-primary-700 shadow-sm' : ''}
+          icon={<List size={16} />}
+        />
         <button
           onClick={onSave}
           disabled={saving || disabled}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
+          className="ui-button ui-button-primary text-sm"
         >
           {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
           保存为批注 PDF
         </button>
-        <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded" title="关闭">
-          <X size={18} />
-        </button>
+        <IconButton label="关闭批注器" onClick={onClose} icon={<X size={18} />} />
       </div>
     </header>
   );

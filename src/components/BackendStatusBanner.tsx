@@ -58,8 +58,11 @@ export default function BackendStatusBanner({
 }: Props) {
   if (status === 'online') {
     return (
-      <div className="flex items-center gap-2 px-4 py-2 text-sm bg-green-50 text-green-700 border-b border-green-200 shrink-0">
-        <CheckCircle2 size={16} className="shrink-0" />
+      <div
+        className="backend-status-banner status-surface status-success flex min-h-7 shrink-0 items-center gap-2 px-3.5 py-1 text-xs"
+        role="status"
+      >
+        <CheckCircle2 size={14} className="shrink-0" />
         <span>后端服务运行正常，AI 翻译和总结功能已就绪。</span>
       </div>
     );
@@ -67,8 +70,11 @@ export default function BackendStatusBanner({
 
   if (status === 'starting') {
     return (
-      <div className="flex items-center gap-2 px-4 py-2 text-sm bg-sky-50 text-sky-700 border-b border-sky-200 shrink-0">
-        <Loader2 size={16} className="shrink-0 animate-spin" />
+      <div
+        className="backend-status-banner status-surface status-info flex min-h-7 shrink-0 items-center gap-2 px-3.5 py-1 text-xs"
+        role="status"
+      >
+        <Loader2 size={14} className="shrink-0 animate-spin" />
         <span>后端服务启动中，正在加载翻译引擎，请稍候…</span>
       </div>
     );
@@ -80,8 +86,11 @@ export default function BackendStatusBanner({
         ? `正在自动重启（第 ${restartAttempt.attempt}/${restartAttempt.max} 次）`
         : '正在重启';
     return (
-      <div className="flex items-center gap-2 px-4 py-2 text-sm bg-sky-50 text-sky-700 border-b border-sky-200 shrink-0">
-        <Loader2 size={16} className="shrink-0 animate-spin" />
+      <div
+        className="backend-status-banner status-surface status-info flex min-h-7 shrink-0 items-center gap-2 px-3.5 py-1 text-xs"
+        role="status"
+      >
+        <Loader2 size={14} className="shrink-0 animate-spin" />
         <span>后端服务意外退出，{detail}中，AI 功能恢复前暂不可用…</span>
       </div>
     );
@@ -89,8 +98,11 @@ export default function BackendStatusBanner({
 
   if (status === 'unknown') {
     return (
-      <div className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-50 text-slate-500 border-b border-slate-200 shrink-0">
-        <Loader2 size={16} className="shrink-0 animate-spin" />
+      <div
+        className="backend-status-banner status-surface flex min-h-7 shrink-0 items-center gap-2 px-3.5 py-1 text-xs text-slate-500"
+        role="status"
+      >
+        <Loader2 size={14} className="shrink-0 animate-spin" />
         <span>正在检测本地后端服务…</span>
       </div>
     );
@@ -129,22 +141,25 @@ function OfflineCard({
     (failure?.code != null ? `后端进程异常退出（退出码 ${failure.code}），自动重启未能恢复。` : '');
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3 text-sm bg-amber-50 text-amber-800 border-b border-amber-200 shrink-0">
-      <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-500" />
+    <div
+      className="backend-status-banner status-surface status-warning flex shrink-0 items-start gap-3 px-3.5 py-2.5 text-xs"
+      role="alert"
+    >
+      <AlertTriangle size={18} className="mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="font-medium">后端服务未连接</p>
-        <p className="text-amber-700 mt-0.5">
+        <p className="font-semibold">后端服务未连接</p>
+        <p className="mt-0.5 leading-5 text-amber-800">
           {crashDetail ||
             'AI 翻译、全文翻译和文献总结暂不可用。请稍候几秒后点击「重新检测」；若仍未恢复，可能是被杀毒软件拦截或端口 8765 被占用。'}
         </p>
         {failure?.logPath && (
-          <p className="text-amber-700 mt-1 text-xs break-all">
+          <p className="mt-1 break-all text-xs text-amber-800">
             反馈问题时请附上后端日志：{failure.logPath}
             <CopyButton text={failure.logPath} />
           </p>
         )}
         {failure?.restartLog && (
-          <p className="text-amber-700 mt-1 text-xs break-all">
+          <p className="mt-1 break-all text-xs text-amber-800">
             重启轨迹日志：{failure.restartLog}
             <CopyButton text={failure.restartLog} />
           </p>
@@ -152,30 +167,24 @@ function OfflineCard({
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <button
             onClick={onRestart}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-amber-500 border border-amber-500 rounded hover:bg-amber-600 text-white"
+            className="ui-button ui-button-primary min-h-7 px-2.5 py-1 text-xs"
             title="强制结束旧的后端进程并重新启动"
           >
             <RefreshCw size={13} />
             重启后端
           </button>
-          <button
-            onClick={onRecheck}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-white border border-amber-300 rounded hover:bg-amber-50 text-amber-700"
-          >
+          <button onClick={onRecheck} className="ui-button min-h-7 px-2.5 py-1 text-xs">
             <RotateCw size={13} />
             重新检测
           </button>
-          <button
-            onClick={onShowHelp}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-white border border-amber-300 rounded hover:bg-amber-50 text-amber-700"
-          >
+          <button onClick={onShowHelp} className="ui-button min-h-7 px-2.5 py-1 text-xs">
             <HelpCircle size={13} />
             查看说明
           </button>
           <button
             onClick={onExportDiagnostics}
             disabled={diagnosticExporting}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-white border border-amber-300 rounded hover:bg-amber-50 text-amber-700 disabled:opacity-50"
+            className="ui-button min-h-7 px-2.5 py-1 text-xs"
           >
             {diagnosticExporting ? (
               <Loader2 size={13} className="animate-spin" />
@@ -214,7 +223,8 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      className="ml-1 px-1.5 py-0.5 text-xs bg-white border border-amber-300 rounded hover:bg-amber-50 text-amber-700 align-middle"
+      className="ui-button ml-1 min-h-6 px-1.5 py-0.5 align-middle text-xs"
+      aria-live="polite"
     >
       {copied ? '已复制' : '复制路径'}
     </button>

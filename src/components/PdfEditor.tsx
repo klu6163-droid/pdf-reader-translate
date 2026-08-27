@@ -32,6 +32,7 @@ import {
 } from '@/services/api';
 import { savePdfFile } from '@/services/pdf';
 import type { AnalyzeResult, EditBlock, EditOp } from '@/types';
+import IconButton from './ui/IconButton';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -178,29 +179,27 @@ export default function PdfEditor({ data, name, onClose }: Props) {
   const editCount = edits.size;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-800/95">
+    <div className="workspace-overlay fixed inset-0 z-[60] flex flex-col">
       {/* 顶部工具栏 */}
-      <header className="flex items-center gap-3 px-4 h-12 bg-white shrink-0 shadow">
+      <header className="workspace-toolbar flex h-[52px] shrink-0 items-center gap-3 overflow-x-auto px-3">
         <Type size={18} className="text-primary-600" />
         <span className="font-semibold text-slate-800">PDF 编辑</span>
-        <span className="text-xs text-slate-400 truncate max-w-[240px]">{name}</span>
+        <span className="compact-title max-w-[240px] truncate text-xs text-slate-500">{name}</span>
 
         <div className="flex items-center gap-1 ml-2">
-          <button
+          <IconButton
             onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
-            className="p-1 hover:bg-slate-100 rounded"
-            title="缩小"
-          >
-            <Minus size={16} />
-          </button>
-          <span className="w-12 text-center text-sm">{Math.round(scale * 100)}%</span>
-          <button
+            size="sm"
+            label="缩小"
+            icon={<Minus size={16} />}
+          />
+          <span className="w-12 text-center text-sm tabular-nums">{Math.round(scale * 100)}%</span>
+          <IconButton
             onClick={() => setScale((s) => Math.min(3, s + 0.15))}
-            className="p-1 hover:bg-slate-100 rounded"
-            title="放大"
-          >
-            <Plus size={16} />
-          </button>
+            size="sm"
+            label="放大"
+            icon={<Plus size={16} />}
+          />
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -210,14 +209,12 @@ export default function PdfEditor({ data, name, onClose }: Props) {
           <button
             onClick={handleSave}
             disabled={saving || loading || !!error}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
+            className="ui-button ui-button-primary text-sm"
           >
             {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
             保存为新 PDF
           </button>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded" title="关闭编辑器">
-            <X size={18} />
-          </button>
+          <IconButton label="关闭编辑器" onClick={onClose} icon={<X size={18} />} />
         </div>
       </header>
 
@@ -226,10 +223,10 @@ export default function PdfEditor({ data, name, onClose }: Props) {
         <div
           className={`flex items-center gap-2 px-4 py-2 text-sm shrink-0 ${
             banner.kind === 'ok'
-              ? 'bg-green-50 text-green-700 border-b border-green-200'
+              ? 'status-surface status-success'
               : banner.kind === 'warn'
-                ? 'bg-amber-50 text-amber-700 border-b border-amber-200'
-                : 'bg-sky-50 text-sky-700 border-b border-sky-200'
+                ? 'status-surface status-warning'
+                : 'status-surface status-info'
           }`}
         >
           <Info size={15} className="shrink-0" />
@@ -249,7 +246,7 @@ export default function PdfEditor({ data, name, onClose }: Props) {
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center p-6">
             <AlertCircle size={40} className="text-red-400" strokeWidth={1.5} />
             <p className="text-sm text-red-200 max-w-md">{error}</p>
-            <button onClick={onClose} className="px-3 py-1.5 text-sm bg-white/90 rounded">
+            <button onClick={onClose} className="ui-button bg-white text-sm">
               关闭
             </button>
           </div>
@@ -375,7 +372,7 @@ function PageLayer({
   return (
     <div
       ref={wrapRef}
-      className="relative mx-auto my-3 bg-white shadow-lg"
+      className="pdf-page-surface relative mx-auto my-3 bg-white"
       style={{ width: w, height: h }}
     >
       <canvas ref={canvasRef} style={{ width: w, height: h }} className="block" />
@@ -470,7 +467,7 @@ function BlockBox({ block, scale, eff, selected, onSelect, onPatch, onReset }: B
         <div className="absolute bg-white" style={rectStyle(ox0, oy0, ox1, oy1, scale)} />
         <button
           onClick={() => onReset(block.id)}
-          className="absolute flex items-center gap-1 px-1 text-[10px] bg-red-100 text-red-600 rounded border border-red-300 hover:bg-red-200"
+          className="absolute flex items-center gap-1 rounded-control border border-red-300 bg-red-100 px-1 text-[10px] text-red-600 hover:bg-red-200"
           style={{ left: ox0 * scale, top: oy0 * scale }}
           title="还原此文本块"
         >
@@ -562,11 +559,12 @@ function BlockToolbar({
 }) {
   return (
     <div
-      className="absolute left-0 top-full mt-1 flex items-center gap-1 px-1.5 py-1 bg-white rounded shadow-lg border text-slate-600 z-30"
+      className="glass-surface absolute left-0 top-full z-30 mt-1 flex items-center gap-1 rounded-toolbar px-1.5 py-1 text-slate-600"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button
-        className="p-1 hover:bg-slate-100 rounded"
+        className="icon-button icon-button-sm"
+        aria-label="减小字号"
         title="减小字号"
         onClick={() => onSize(Math.max(4, Math.round((size - 1) * 10) / 10))}
       >
@@ -574,14 +572,15 @@ function BlockToolbar({
       </button>
       <span className="text-[11px] w-8 text-center tabular-nums">{size.toFixed(1)}</span>
       <button
-        className="p-1 hover:bg-slate-100 rounded"
+        className="icon-button icon-button-sm"
+        aria-label="增大字号"
         title="增大字号"
         onClick={() => onSize(Math.round((size + 1) * 10) / 10)}
       >
         <Plus size={13} />
       </button>
       <span className="w-px h-4 bg-slate-200 mx-0.5" />
-      <label className="p-0.5 hover:bg-slate-100 rounded cursor-pointer" title="文字颜色">
+      <label className="ui-control cursor-pointer p-0.5 hover:bg-white/80" title="文字颜色">
         <input
           type="color"
           value={color}
@@ -591,14 +590,20 @@ function BlockToolbar({
       </label>
       <span className="w-px h-4 bg-slate-200 mx-0.5" />
       <button
-        className="p-1 hover:bg-red-50 text-red-500 rounded"
+        className="icon-button icon-button-sm text-red-500 hover:bg-red-50"
+        aria-label="删除此文本块"
         title="删除此文本块"
         onClick={onDelete}
       >
         <Trash2 size={13} />
       </button>
       {isEdited && (
-        <button className="p-1 hover:bg-slate-100 rounded" title="撤销此块改动" onClick={onReset}>
+        <button
+          className="icon-button icon-button-sm"
+          title="撤销此块改动"
+          aria-label="撤销此块改动"
+          onClick={onReset}
+        >
           <RotateCcw size={13} />
         </button>
       )}

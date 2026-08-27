@@ -13,6 +13,7 @@ import {
   CornerUpLeft,
   Copy,
   Inbox,
+  MessageSquareText,
 } from 'lucide-react';
 import { useStore, useActiveTab } from '@/store/useSettings';
 import type { HistoryItem, NoteItem } from '@/types';
@@ -36,28 +37,37 @@ export default function HistoryNotes() {
   }, [notesFlash]);
 
   return (
-    <div className="shrink-0 border-t bg-slate-50">
-      {/* 折叠条 */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-4 h-9 text-xs text-slate-500 hover:bg-slate-100"
-      >
-        <span className="flex items-center gap-1">
-          <History size={13} /> 历史 {history.length}
-        </span>
-        <span className="flex items-center gap-1">
-          <Star size={13} /> 笔记 {notes.length}
-        </span>
-        <span className="ml-auto flex items-center gap-1">
-          {open ? '收起' : '展开'}
-          {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </span>
-      </button>
+    <div className="history-drawer" data-open={open}>
+      <div className="history-drawer-panel">
+        {/* 折叠条 */}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-10 w-full shrink-0 items-center gap-3 px-4 text-xs text-slate-600 hover:bg-white/55"
+          aria-expanded={open}
+          aria-controls="history-notes-content"
+        >
+          <span className="flex items-center gap-1">
+            <History size={14} /> 历史 {history.length}
+          </span>
+          <span className="flex items-center gap-1">
+            <Star size={14} /> 笔记 {notes.length}
+          </span>
+          <span className="ml-auto flex items-center gap-1 text-slate-500">
+            {open ? '收起' : '展开'}
+            {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </span>
+        </button>
 
-      {open && (
-        <div className="flex flex-col max-h-72">
+        <div
+          id="history-notes-content"
+          className="history-drawer-content flex min-h-0 flex-col"
+          aria-hidden={!open}
+          ref={(element) => {
+            if (element) (element as HTMLDivElement & { inert: boolean }).inert = !open;
+          }}
+        >
           {/* 子标签 */}
-          <div className="flex items-center px-3 gap-1 border-b bg-white">
+          <div className="flex shrink-0 items-center gap-1 border-b border-slate-200/70 bg-white/90 px-3">
             <SubTab
               active={sub === 'history'}
               onClick={() => setSub('history')}
@@ -75,7 +85,7 @@ export default function HistoryNotes() {
             {sub === 'history' && history.length > 0 && (
               <button
                 onClick={clearHistory}
-                className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-red-500"
+                className="ml-auto flex items-center gap-1 rounded-control px-2 py-1 text-xs text-slate-500 hover:bg-red-50 hover:text-red-600"
               >
                 <Trash2 size={12} /> 清空
               </button>
@@ -83,7 +93,7 @@ export default function HistoryNotes() {
             {sub === 'notes' && notes.length > 0 && (
               <button
                 onClick={clearNotes}
-                className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-red-500"
+                className="ml-auto flex items-center gap-1 rounded-control px-2 py-1 text-xs text-slate-500 hover:bg-red-50 hover:text-red-600"
               >
                 <Trash2 size={12} /> 清空
               </button>
@@ -91,7 +101,7 @@ export default function HistoryNotes() {
           </div>
 
           {/* 列表 */}
-          <div className="flex-1 overflow-auto p-2 space-y-1.5">
+          <div className="flex-1 space-y-1.5 overflow-auto p-2">
             {sub === 'history' ? (
               history.length === 0 ? (
                 <Empty text="还没有翻译历史" />
@@ -105,7 +115,7 @@ export default function HistoryNotes() {
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -127,7 +137,7 @@ function SubTab({
     <button
       onClick={onClick}
       className={clsx(
-        'flex items-center gap-1 px-2.5 py-2 text-xs border-b-2 transition-colors',
+        'flex items-center gap-1 rounded-t-control border-b-2 px-2.5 py-2 text-xs transition-colors',
         active
           ? 'border-primary-600 text-primary-600 font-medium'
           : 'border-transparent text-slate-500 hover:text-slate-700',
@@ -174,7 +184,7 @@ function HistoryRow({ item }: { item: HistoryItem }) {
   };
 
   return (
-    <div className="p-2 bg-white rounded border border-slate-200 text-xs">
+    <div className="rounded-control border border-slate-200 bg-white p-2 text-xs shadow-sm">
       <div className="flex items-center gap-2 text-slate-400 mb-1">
         <span className="truncate">{item.tabName}</span>
         <span>· 第 {item.page} 页</span>
@@ -183,14 +193,16 @@ function HistoryRow({ item }: { item: HistoryItem }) {
             onClick={restore}
             disabled={!activeTab}
             title="回填到划词翻译"
-            className="p-1 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50 disabled:opacity-40"
+            className="icon-button icon-button-sm text-slate-400 hover:text-primary-600 disabled:opacity-40"
+            aria-label="回填到划词翻译"
           >
             <CornerUpLeft size={12} />
           </button>
           <button
             onClick={copy}
             title="复制译文"
-            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="icon-button icon-button-sm text-slate-400"
+            aria-label="复制译文"
           >
             <Copy size={12} />
           </button>
@@ -205,15 +217,16 @@ function HistoryRow({ item }: { item: HistoryItem }) {
 function NoteRow({ item }: { item: NoteItem }) {
   const removeNote = useStore((s) => s.removeNote);
   return (
-    <div className="p-2 bg-white rounded border border-slate-200 text-xs">
+    <div className="rounded-control border border-slate-200 bg-white p-2 text-xs shadow-sm">
       <div className="flex items-center gap-2 text-slate-400 mb-1">
-        <Star size={11} className="text-amber-400" />
+        <Star size={11} className="text-primary-500" />
         <span className="truncate">{item.tabName}</span>
         <span>· 第 {item.page} 页</span>
         <button
           onClick={() => removeNote(item.id)}
           title="删除笔记"
-          className="ml-auto p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50"
+          className="icon-button icon-button-sm ml-auto text-slate-400 hover:text-red-500"
+          aria-label="删除笔记"
         >
           <Trash2 size={12} />
         </button>
@@ -221,8 +234,9 @@ function NoteRow({ item }: { item: NoteItem }) {
       <p className="text-slate-500 line-clamp-1">{item.original}</p>
       <p className="text-slate-800 line-clamp-2 mt-0.5">{item.translated}</p>
       {item.note && (
-        <p className="mt-1 pl-2 border-l-2 border-amber-300 text-amber-700 line-clamp-2">
-          {item.note}
+        <p className="mt-1 flex items-start gap-1.5 border-l-2 border-primary-300 pl-2 text-slate-700 line-clamp-2">
+          <MessageSquareText size={12} className="mt-0.5 shrink-0 text-primary-500" />
+          <span>{item.note}</span>
         </p>
       )}
     </div>

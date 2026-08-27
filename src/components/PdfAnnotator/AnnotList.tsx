@@ -1,5 +1,5 @@
 // 右侧批注列表（按页分组 + 跳转 + 导出）
-import { FileJson, FileText, Trash2 } from 'lucide-react';
+import { FileJson, FileText, MessageSquareText, Trash2 } from 'lucide-react';
 import { TYPE_LABELS } from './constants';
 import type { PdfAnnotation } from '@/types';
 
@@ -21,21 +21,23 @@ export default function AnnotList({ annotations, selectedId, onJump, onRemove, o
   const pagesSorted = Array.from(byPage.keys()).sort((x, y) => x - y);
 
   return (
-    <div className="w-72 bg-white border-l flex flex-col shrink-0">
+    <div className="flex w-72 shrink-0 flex-col border-l border-slate-300 bg-white">
       <div className="flex items-center gap-2 px-3 h-9 border-b text-sm shrink-0">
         <span className="font-medium text-slate-700">批注列表</span>
         <span className="text-xs text-slate-400">{annotations.length}</span>
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={() => onExport('json')}
-            className="p-1 text-slate-500 hover:bg-slate-100 rounded"
+            className="icon-button icon-button-sm text-slate-500"
+            aria-label="导出 JSON 并复制到剪贴板"
             title="导出 JSON（复制到剪贴板）"
           >
             <FileJson size={14} />
           </button>
           <button
             onClick={() => onExport('markdown')}
-            className="p-1 text-slate-500 hover:bg-slate-100 rounded"
+            className="icon-button icon-button-sm text-slate-500"
+            aria-label="导出 Markdown 并复制到剪贴板"
             title="导出 Markdown（复制到剪贴板）"
           >
             <FileText size={14} />
@@ -57,7 +59,7 @@ export default function AnnotList({ annotations, selectedId, onJump, onRemove, o
               <div
                 key={a.id}
                 onClick={() => onJump(a)}
-                className={`px-3 py-2 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${
+                className={`cursor-pointer border-b border-slate-100 px-3 py-2 hover:bg-slate-50 ${
                   selectedId === a.id ? 'bg-primary-50' : ''
                 }`}
               >
@@ -77,15 +79,17 @@ export default function AnnotList({ annotations, selectedId, onJump, onRemove, o
                       e.stopPropagation();
                       onRemove(a.id);
                     }}
-                    className="ml-auto p-0.5 text-slate-300 hover:text-red-500"
+                    className="icon-button icon-button-sm ml-auto text-slate-400 hover:text-red-500"
                     title="删除"
+                    aria-label="删除批注"
                   >
                     <Trash2 size={12} />
                   </button>
                 </div>
                 {(a.text || a.comment) && (
-                  <p className="mt-1 text-xs text-slate-500 line-clamp-2">
-                    {a.comment ? `💬 ${a.comment}` : a.text}
+                  <p className="mt-1 flex items-start gap-1 text-xs text-slate-500">
+                    {a.comment && <MessageSquareText size={12} className="mt-0.5 shrink-0" />}
+                    <span className="line-clamp-2">{a.comment || a.text}</span>
                   </p>
                 )}
               </div>

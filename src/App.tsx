@@ -11,6 +11,7 @@ import {
   Clock,
   Download,
   Loader2,
+  X,
 } from 'lucide-react';
 import { useStore } from '@/store/useSettings';
 import { checkBackend } from '@/services/api';
@@ -24,6 +25,10 @@ import PdfEditor from '@/components/PdfEditor';
 import PdfAnnotator from '@/components/PdfAnnotator';
 import BackendStatusBanner from '@/components/BackendStatusBanner';
 import HelpModal from '@/components/HelpModal';
+import AppMark from '@/components/ui/AppMark';
+import IconButton from '@/components/ui/IconButton';
+import ModalSurface from '@/components/ui/ModalSurface';
+import clayDocumentTranslate from '@/assets/clay-document-translate.png';
 import type { AnnotTool } from '@/types';
 import { hasDirtyStash, persistStash, discardDirtyStash } from '@/services/annotStash';
 import { exportDiagnosticBundle } from '@/services/diagnostics';
@@ -311,80 +316,91 @@ export default function App() {
   }, [loadFromPath, addTab]);
 
   return (
-    <div className="flex flex-col h-full bg-slate-100 relative">
+    <div className="app-shell relative flex h-full flex-col overflow-hidden">
       {/* 拖放遮罩：当文件拖入窗口时显示 */}
       {dragOver && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-primary-600/20 border-4 border-dashed border-primary-500 pointer-events-none">
-          <Upload size={56} className="text-primary-600 mb-3" strokeWidth={1.5} />
-          <p className="text-xl font-semibold text-primary-700">松开以打开 PDF</p>
+        <div className="drag-overlay pointer-events-none absolute inset-3 z-50 flex flex-col items-center justify-center">
+          <div className="soft-icon-orb flex h-16 w-16 items-center justify-center text-primary-600">
+            <Upload size={32} />
+          </div>
+          <p className="mt-3 text-base font-semibold text-primary-700">松开以打开 PDF</p>
+          <p className="mt-1 text-xs text-slate-600">仅处理第一个有效的 PDF 文件</p>
         </div>
       )}
 
-      {/* 顶部工具栏 */}
-      <header className="flex items-center justify-between px-4 h-12 bg-white border-b shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-800 mr-1">PDF 阅读翻译</span>
-          <button
-            onClick={openPdf}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
-          >
-            <FileText size={16} />
-            打开 PDF
-          </button>
-          <RecentFilesMenu files={recentFiles} onOpen={loadFromPath} />
-          {activeTab && (
-            <button
-              onClick={() => setEditorOpen(true)}
-              disabled={backendStatus !== 'online'}
-              title={backendStatus === 'online' ? '编辑当前 PDF 的文本块' : '需先连接后端才能编辑'}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-primary-600 text-primary-700 rounded hover:bg-primary-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Type size={16} />
-              编辑
+      {/* 顶部主工具栏与标签栏共用一个玻璃平面，避免玻璃叠玻璃。 */}
+      <div className="app-top-chrome shrink-0">
+        <header className="flex h-14 items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="mr-1 flex shrink-0 items-center gap-2.5" aria-label="PDF 阅读翻译">
+              <span className="app-mark-shell flex h-9 w-9 items-center justify-center">
+                <AppMark size={24} />
+              </span>
+              <span className="compact-title whitespace-nowrap font-semibold tracking-[-0.025em] text-[var(--text-primary)]">
+                PDF 阅读翻译
+              </span>
+            </div>
+            <button onClick={openPdf} className="ui-button ui-button-primary text-sm">
+              <FileText size={16} />
+              打开 PDF
             </button>
-          )}
-          {activeTab && (
-            <button
-              onClick={() => openAnnotWith('select')}
-              disabled={backendStatus !== 'online'}
-              title={
-                backendStatus === 'online'
-                  ? '为当前 PDF 添加批注（高亮/下划线/便签/画笔）'
-                  : '需先连接后端才能批注'
-              }
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-amber-500 text-amber-600 rounded hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Highlighter size={16} />
-              批注
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={exportDiagnostics}
-            disabled={diagnosticExporting}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50"
-            title="导出不含原文、译文和 API Key 的 diagnostics.json"
-          >
-            {diagnosticExporting ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <Download size={16} />
+            <RecentFilesMenu files={recentFiles} onOpen={loadFromPath} />
+            {activeTab && (
+              <button
+                onClick={() => setEditorOpen(true)}
+                disabled={backendStatus !== 'online'}
+                title={
+                  backendStatus === 'online' ? '编辑当前 PDF 的文本块' : '需先连接后端才能编辑'
+                }
+                className="ui-button text-sm"
+              >
+                <Type size={16} />
+                <span className="compact-label">编辑</span>
+              </button>
             )}
-            {diagnosticExporting ? '导出中' : '导出诊断'}
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded"
-          >
-            <SettingsIcon size={16} />
-            设置
-          </button>
-        </div>
-      </header>
+            {activeTab && (
+              <button
+                onClick={() => openAnnotWith('select')}
+                disabled={backendStatus !== 'online'}
+                title={
+                  backendStatus === 'online'
+                    ? '为当前 PDF 添加批注（高亮/下划线/便签/画笔）'
+                    : '需先连接后端才能批注'
+                }
+                className="ui-button ui-button-accent text-sm"
+              >
+                <Highlighter size={16} />
+                <span className="compact-label">批注</span>
+              </button>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              onClick={exportDiagnostics}
+              disabled={diagnosticExporting}
+              className="ui-button text-sm"
+              title="导出不含原文、译文和 API Key 的 diagnostics.json"
+            >
+              {diagnosticExporting ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              <span className="compact-label">{diagnosticExporting ? '导出中' : '导出诊断'}</span>
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="ui-button text-sm"
+              title="API 与模型设置"
+            >
+              <SettingsIcon size={16} />
+              <span className="compact-label">设置</span>
+            </button>
+          </div>
+        </header>
 
-      {/* 标签栏 */}
-      <TabBar onOpen={openPdf} />
+        <TabBar onOpen={openPdf} />
+      </div>
 
       {/* 后端状态提示（离线=友好卡片 / 在线=绿色条 / unknown=检测中） */}
       <BackendStatusBanner
@@ -399,11 +415,17 @@ export default function App() {
       />
 
       {diagnosticNotice && (
-        <div className="flex items-center gap-2 px-4 py-2 text-xs bg-sky-50 text-sky-700 border-b border-sky-200 break-all">
+        <div
+          className="app-alert-banner status-surface status-info flex items-center gap-2 break-all px-4 py-1.5 text-xs"
+          role="status"
+        >
           <span className="flex-1">{diagnosticNotice}</span>
-          <button onClick={() => setDiagnosticNotice('')} aria-label="关闭诊断提示">
-            ✕
-          </button>
+          <IconButton
+            size="sm"
+            label="关闭诊断提示"
+            onClick={() => setDiagnosticNotice('')}
+            icon={<X size={14} />}
+          />
         </div>
       )}
 
@@ -411,9 +433,12 @@ export default function App() {
       {dropError && <DropErrorBanner message={dropError} onDismiss={dismissDropError} />}
 
       {/* 主体：左右分栏（可拖拽调整比例） */}
-      <div className="flex flex-1 min-h-0">
+      <div className="workspace-grid flex min-h-0 flex-1 gap-2 px-2 pb-2 pt-1.5">
         {/* 左侧原始 PDF（按标签 key 重建，保证每篇独立 PDF.js 实例） */}
-        <div className="bg-slate-200 min-w-0 shrink-0" style={{ width: `${splitRatio * 100}%` }}>
+        <div
+          className="workspace-pane workspace-pane-pdf min-w-0 shrink-0 overflow-hidden"
+          style={{ width: `${splitRatio * 100}%` }}
+        >
           {activeTab ? (
             <PDFViewer
               key={activeTab.id}
@@ -432,7 +457,7 @@ export default function App() {
         <Splitter />
 
         {/* 右侧功能面板（常驻，随激活标签重渲染） */}
-        <div className="bg-white min-w-0 flex-1">
+        <div className="workspace-pane workspace-pane-tools min-w-0 flex-1 overflow-hidden">
           <TranslationPanel />
         </div>
       </div>
@@ -462,39 +487,43 @@ export default function App() {
       )}
 
       {/* 退出确认：是否保留本次批注 */}
-      {exitAskOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50">
-          <div className="w-96 bg-white rounded-lg shadow-xl p-5 space-y-4">
-            <h3 className="font-semibold text-slate-800">保留批注？</h3>
-            <p className="text-sm text-slate-600">
-              本次会话中有批注改动尚未写入 PDF。是否保留这些批注， 以便下次打开软件继续编辑？
-            </p>
-            <p className="text-xs text-slate-400">
-              保留：下次打开同一 PDF 的批注时自动恢复。不保留：仅丢弃本次改动。
-            </p>
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={() => setExitAskOpen(false)}
-                className="px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 rounded"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => finishExit(false)}
-                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
-              >
-                不保留并退出
-              </button>
-              <button
-                onClick={() => finishExit(true)}
-                className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
-              >
-                保留并退出
-              </button>
-            </div>
+      <ModalSurface
+        open={exitAskOpen}
+        onClose={() => setExitAskOpen(false)}
+        closeOnBackdrop={false}
+        labelledBy="exit-confirm-title"
+        className="max-w-96"
+        zIndexClass="z-[80]"
+      >
+        <div className="modal-body-solid space-y-4 p-5">
+          <h3 id="exit-confirm-title" className="font-semibold text-slate-800">
+            保留批注？
+          </h3>
+          <p className="text-sm text-slate-600">
+            本次会话中有批注改动尚未写入 PDF。是否保留这些批注， 以便下次打开软件继续编辑？
+          </p>
+          <p className="text-xs text-slate-400">
+            保留：下次打开同一 PDF 的批注时自动恢复。不保留：仅丢弃本次改动。
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => setExitAskOpen(false)} className="ui-button text-sm">
+              取消
+            </button>
+            <button
+              onClick={() => finishExit(false)}
+              className="ui-button ui-button-danger text-sm"
+            >
+              不保留并退出
+            </button>
+            <button
+              onClick={() => finishExit(true)}
+              className="ui-button ui-button-primary text-sm"
+            >
+              保留并退出
+            </button>
           </div>
         </div>
-      )}
+      </ModalSurface>
     </div>
   );
 }
@@ -522,23 +551,24 @@ function RecentFilesMenu({
   }, [open]);
 
   return (
-    <div className="relative" data-recent-menu>
+    <div className="relative z-[60]" data-recent-menu>
       <button
         onClick={() => setOpen((v) => !v)}
         disabled={files.length === 0}
         title={files.length === 0 ? '暂无最近文件' : '最近打开的文件'}
-        className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        className="ui-button text-sm"
+        aria-expanded={open}
       >
         <Clock size={16} />
-        最近文件
+        <span className="compact-label">最近文件</span>
         <ChevronDown size={14} className="text-slate-400" />
       </button>
       {open && files.length > 0 && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 max-h-80 overflow-auto">
+        <div className="glass-surface-strong absolute left-0 top-full z-[70] mt-2 max-h-80 w-72 overflow-auto rounded-panel p-1.5">
           {files.map((f) => (
             <div
               key={f.path}
-              className="group flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer"
+              className="group flex cursor-pointer items-center gap-2 rounded-control px-3 py-2 hover:bg-white/70"
               onClick={() => {
                 setOpen(false);
                 onOpen(f.path);
@@ -547,16 +577,16 @@ function RecentFilesMenu({
             >
               <FileText size={14} className="shrink-0 text-slate-400" />
               <span className="flex-1 truncate text-sm text-slate-700">{f.name}</span>
-              <button
+              <IconButton
                 onClick={(e) => {
                   e.stopPropagation();
                   removeRecentFile(f.path);
                 }}
-                className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 px-1"
-                title="从列表移除"
-              >
-                ✕
-              </button>
+                size="sm"
+                label="从列表移除"
+                className="opacity-0 group-hover:opacity-100 text-slate-400"
+                icon={<X size={13} />}
+              />
             </div>
           ))}
           <div className="border-t mt-1 pt-1">
@@ -565,7 +595,7 @@ function RecentFilesMenu({
                 clearRecentFiles();
                 setOpen(false);
               }}
-              className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-red-500 hover:bg-slate-50"
+              className="w-full rounded-control px-3 py-2 text-left text-xs text-slate-500 hover:bg-red-50 hover:text-red-600"
             >
               清空最近文件
             </button>
@@ -578,19 +608,23 @@ function RecentFilesMenu({
 
 function EmptyHint({ onOpen }: { onOpen: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full p-6">
-      <div className="w-full max-w-sm flex flex-col items-center text-center gap-4 p-8 bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center">
-          <FileText size={32} className="text-primary-500" strokeWidth={1.5} />
-        </div>
+    <div className="flex h-full flex-col items-center justify-center p-6">
+      <div className="empty-state-card flex w-full max-w-sm flex-col items-center gap-3.5 px-8 pb-8 pt-5 text-center">
+        <img
+          src={clayDocumentTranslate}
+          alt=""
+          aria-hidden="true"
+          className="clay-empty-illustration h-32 w-32 object-contain"
+        />
         <div>
-          <p className="text-base font-medium text-slate-800">打开一篇 PDF 开始阅读</p>
-          <p className="text-sm text-slate-500 mt-1">支持拖拽 PDF 到这里，或选择本地 PDF 文件。</p>
+          <p className="text-base font-semibold tracking-[-0.015em] text-[var(--text-primary)]">
+            打开一篇 PDF 开始阅读
+          </p>
+          <p className="mt-1.5 text-sm text-[var(--text-secondary)]">
+            支持拖拽 PDF 到这里，或选择本地 PDF 文件。
+          </p>
         </div>
-        <button
-          onClick={onOpen}
-          className="flex items-center gap-2 px-5 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-        >
+        <button onClick={onOpen} className="ui-button ui-button-primary px-5 text-sm">
           <FileText size={16} />
           选择 PDF 文件
         </button>
@@ -608,12 +642,13 @@ function DropErrorBanner({ message, onDismiss }: { message: string; onDismiss: (
   }, [message, onDismiss]);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 text-sm bg-red-50 text-red-600 border-b border-red-200 shrink-0">
+    <div
+      className="app-alert-banner status-surface status-danger flex shrink-0 items-center gap-2 px-4 py-1.5 text-sm"
+      role="alert"
+    >
       <AlertTriangle size={16} className="shrink-0" />
       <span className="flex-1">{message}</span>
-      <button onClick={onDismiss} className="text-red-400 hover:text-red-600 ml-2">
-        ✕
-      </button>
+      <IconButton size="sm" label="关闭提示" onClick={onDismiss} icon={<X size={14} />} />
     </div>
   );
 }

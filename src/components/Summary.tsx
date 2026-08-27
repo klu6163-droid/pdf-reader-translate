@@ -69,25 +69,28 @@ export default function Summary() {
   const hasPdf = !!tab?.pdfData;
 
   return (
-    <div className="flex flex-col h-full p-4 gap-3">
+    <div className="flex h-full flex-col gap-3 bg-white p-4">
       <button
         onClick={start}
         disabled={running || !hasPdf || !backendOnline}
-        className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 shrink-0"
+        className="ui-button ui-button-primary min-h-10 shrink-0 px-4 py-2.5 text-sm"
       >
         {running ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
         {running ? '生成中...' : '生成结构化总结'}
       </button>
 
       {!backendOnline && (
-        <div className="flex items-start gap-2 p-3 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded shrink-0">
+        <div className="status-surface status-warning flex shrink-0 items-start gap-2 rounded-control border p-3 text-xs">
           <AlertCircle size={14} className="mt-0.5 shrink-0" />
           <span>后端未连接，文献总结暂不可用。请在顶栏点「查看说明」启动后端后重试。</span>
         </div>
       )}
 
       {error && (
-        <div className="flex items-start gap-2 p-3 text-sm bg-red-50 text-red-600 rounded shrink-0">
+        <div
+          className="status-surface status-danger flex shrink-0 items-start gap-2 rounded-control border p-3 text-sm"
+          role="alert"
+        >
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -95,7 +98,9 @@ export default function Summary() {
 
       {!content && !running && !error && (
         <div className="flex flex-col items-center justify-center flex-1 text-slate-400 gap-2">
-          <Sparkles size={40} strokeWidth={1} />
+          <div className="flex h-14 w-14 items-center justify-center rounded-panel bg-slate-100">
+            <Sparkles size={30} />
+          </div>
           <p className="text-sm text-center">
             提取 PDF 全文并生成中文总结
             <br />
@@ -105,10 +110,15 @@ export default function Summary() {
       )}
 
       {(content || running) && (
-        <div className="flex-1 overflow-auto summary-md text-sm text-slate-800">
+        <div className="content-surface summary-md flex-1 overflow-auto p-4 text-sm text-slate-800">
           <MarkdownLite text={content} />
           {running && (
-            <span className="inline-block w-2 h-4 bg-primary-500 animate-pulse ml-0.5 align-middle" />
+            <span
+              className="ml-1 inline-flex align-middle text-primary-600"
+              aria-label="总结生成中"
+            >
+              <Loader2 size={14} className="animate-spin" />
+            </span>
           )}
         </div>
       )}

@@ -2,7 +2,6 @@
 // 无打开 PDF 时内容区显示统一空态；底部挂「历史 / 笔记」可折叠抽屉。
 
 import { useState } from 'react';
-import clsx from 'clsx';
 import { Languages, FileText, ScrollText, FileOutput, FileSearch } from 'lucide-react';
 import type { PanelTab } from '@/types';
 import { useStore } from '@/store/useSettings';
@@ -23,44 +22,74 @@ export default function TranslationPanel() {
   const [tab, setTab] = useState<PanelTab>('text');
   const activeTabId = useStore((s) => s.activeTabId);
   const hasTab = activeTabId !== null;
+  const tabIndex = TABS.findIndex((item) => item.key === tab);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="translation-panel relative flex h-full flex-col overflow-hidden">
       {/* 标签切换 */}
-      <div className="flex border-b shrink-0">
+      <div
+        className="panel-switcher shrink-0"
+        role="tablist"
+        aria-label="PDF 功能"
+        style={{ '--tab-index': tabIndex } as React.CSSProperties}
+      >
+        <span className="panel-tab-indicator" aria-hidden="true" />
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={clsx(
-              'flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2 transition-colors',
-              tab === t.key
-                ? 'border-primary-600 text-primary-600 font-medium'
-                : 'border-transparent text-slate-500 hover:text-slate-700',
-            )}
+            role="tab"
+            aria-selected={tab === t.key}
+            aria-controls={`panel-${t.key}`}
+            title={t.label}
+            className="panel-tab"
           >
             {t.icon}
-            {t.label}
+            <span className="panel-tab-label truncate">{t.label}</span>
           </button>
         ))}
       </div>
 
       {/* 内容区：无 PDF 时统一空态；用隐藏而非卸载，保留各自状态 */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="panel-deck flex-1 min-h-0 overflow-hidden">
         {!hasTab ? (
           <NoPdfHint />
         ) : (
           <>
-            <div className={clsx('h-full', tab !== 'text' && 'hidden')}>
+            <div
+              id="panel-text"
+              role="tabpanel"
+              aria-hidden={tab !== 'text'}
+              data-active={tab === 'text'}
+              className="panel-page"
+            >
               <TextTranslate />
             </div>
-            <div className={clsx('h-full', tab !== 'full' && 'hidden')}>
+            <div
+              id="panel-full"
+              role="tabpanel"
+              aria-hidden={tab !== 'full'}
+              data-active={tab === 'full'}
+              className="panel-page"
+            >
               <FullTranslate />
             </div>
-            <div className={clsx('h-full', tab !== 'summary' && 'hidden')}>
+            <div
+              id="panel-summary"
+              role="tabpanel"
+              aria-hidden={tab !== 'summary'}
+              data-active={tab === 'summary'}
+              className="panel-page"
+            >
               <Summary />
             </div>
-            <div className={clsx('h-full', tab !== 'overlay' && 'hidden')}>
+            <div
+              id="panel-overlay"
+              role="tabpanel"
+              aria-hidden={tab !== 'overlay'}
+              data-active={tab === 'overlay'}
+              className="panel-page"
+            >
               <OverlayTranslate />
             </div>
           </>
@@ -75,12 +104,12 @@ export default function TranslationPanel() {
 
 function NoPdfHint() {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3 p-6">
-      <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
-        <FileSearch size={28} strokeWidth={1.4} />
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-[var(--text-tertiary)]">
+      <div className="soft-icon-orb flex h-16 w-16 items-center justify-center text-primary-400">
+        <FileSearch size={28} strokeWidth={1.45} />
       </div>
-      <p className="text-sm text-slate-500 font-medium">先打开一篇 PDF</p>
-      <p className="text-xs text-slate-400 text-center max-w-xs">
+      <p className="text-sm font-semibold text-[var(--text-secondary)]">先打开一篇 PDF</p>
+      <p className="max-w-xs text-center text-xs leading-5 text-[var(--text-tertiary)]">
         在左侧打开 PDF 后，即可使用划词翻译、全文翻译、文献总结与生成译文 PDF。
       </p>
     </div>

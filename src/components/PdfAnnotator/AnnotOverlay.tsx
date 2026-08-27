@@ -101,10 +101,9 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
             points={stroke.map(([x, y]) => `${x * scale},${y * scale}`).join(' ')}
             fill="none"
             stroke={a.color}
-            strokeWidth={2}
+            strokeWidth={selected || flash ? 3 : 2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ filter: ring ? 'drop-shadow(0 0 2px rgba(59,130,246,.9))' : undefined }}
           />
         ))}
       </svg>
@@ -114,9 +113,11 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
   if (a.type === 'note' && a.rect) {
     const [x0, y0] = a.rect;
     return (
-      <div
+      <button
+        type="button"
         onClick={onSelect}
         title={a.comment}
+        aria-label={`打开第 ${a.page + 1} 页笔记${a.comment ? `：${a.comment}` : ''}`}
         style={{
           ...common,
           pointerEvents: 'auto', // 便签始终可点（不挡文字选择：面积小）
@@ -130,7 +131,7 @@ export default function AnnotOverlay({ a, scale, selected, flash, interactive, o
         className="flex items-center justify-center w-5 h-5 rounded-sm"
       >
         <StickyNote size={18} style={{ color: a.color, fill: `${a.color}55` }} strokeWidth={2} />
-      </div>
+      </button>
     );
   }
   return null;

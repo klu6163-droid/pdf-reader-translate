@@ -39,7 +39,7 @@ export default function NoteBubble({
 
   return (
     <div
-      className="absolute z-30 bg-white rounded-lg shadow-xl border border-slate-200 p-2 space-y-1.5"
+      className="glass-surface-strong absolute z-30 space-y-1.5 rounded-panel p-2"
       style={{ left, top, width: BUBBLE_W }}
       onMouseDown={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
@@ -54,6 +54,7 @@ export default function NoteBubble({
           onClick={emptyOnCloseRemoves}
           className="ml-auto text-slate-400 hover:text-slate-600"
           title="完成"
+          aria-label="完成笔记"
         >
           <X size={13} />
         </button>
@@ -69,7 +70,7 @@ export default function NoteBubble({
           }
         }}
         placeholder="输入笔记内容...（Ctrl+Enter 完成）"
-        className="w-full h-20 text-sm border rounded p-1.5 resize-none outline-none focus:border-primary-400"
+        className="field-input h-20 resize-none p-1.5 text-sm"
       />
       <div className="flex items-center gap-1.5">
         {PALETTE.map((c) => (
@@ -80,11 +81,13 @@ export default function NoteBubble({
               annot.color === c ? 'ring-2 ring-offset-1 ring-slate-400' : 'border-slate-300'
             }`}
             style={{ background: c }}
+            aria-label={`笔记颜色 ${c}`}
+            aria-pressed={annot.color === c}
           />
         ))}
         <button
           onClick={onRemove}
-          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-50 rounded"
+          className="ui-button ui-button-danger ml-auto min-h-7 px-1.5 py-0.5 text-xs"
         >
           <Trash2 size={12} />
           删除
