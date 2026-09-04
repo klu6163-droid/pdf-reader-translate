@@ -1,6 +1,6 @@
 [package]
 name = "pdf-reader-translate"
-version = "0.2.2"
+version = "0.2.3"
 description = "PDF 阅读翻译工具"
 authors = ["you"]
 edition = "2021"

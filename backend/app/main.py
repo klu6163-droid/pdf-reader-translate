@@ -21,7 +21,7 @@ for _k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
 
 logger = logging.getLogger("app")
 
-app = FastAPI(title="PDF 阅读翻译后端", version="0.2.2")
+app = FastAPI(title="PDF 阅读翻译后端", version="0.2.3")
 
 # 请求大小限制（默认 200MB，可通过 MAX_UPLOAD_BYTES 调整）。
 # ⚠️ 必须先于 CORS 注册：Starlette add_middleware 用 insert(0)，后注册的在最外层。
