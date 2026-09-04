@@ -6,7 +6,11 @@ import { useEffect, useRef, useState } from 'react';
 import { X, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useStore, resolveSummarySettings } from '@/store/useSettings';
 import { testSettings } from '@/services/api';
-import { normalizeLLMRateLimit, QWEN_MT_RATE_LIMIT_PRESET } from '@/services/llmConfig';
+import {
+  isQwenMtModel,
+  normalizeLLMRateLimit,
+  QWEN_MT_RATE_LIMIT_PRESET,
+} from '@/services/llmConfig';
 import IconButton from './ui/IconButton';
 import ModalSurface from './ui/ModalSurface';
 
@@ -43,6 +47,7 @@ export default function Settings() {
   const [testing, setTesting] = useState<'translate' | 'summary' | null>(null);
   const [translateResult, setTranslateResult] = useState<TestResult | null>(null);
   const [summaryResult, setSummaryResult] = useState<TestResult | null>(null);
+  const effectiveSummaryModel = summaryModel.trim() || model.trim();
 
   // 「打开会话」编号：每次打开弹窗自增，使上一次打开时发起的在途测试请求作废，
   // 避免其结果（最长 35s 后才返回）写到已重置的新输入框上
@@ -141,7 +146,7 @@ export default function Settings() {
             <span className="w-1.5 h-4 bg-primary-500 rounded-full inline-block" />
             翻译模型
             <span className="text-xs font-normal text-slate-400">
-              划词翻译 / 全文翻译 / 覆盖翻译 / 术语解释
+              划词翻译 / 全文翻译 / 覆盖翻译
             </span>
           </h3>
 
@@ -264,8 +269,14 @@ export default function Settings() {
             <span className="text-xs font-normal text-slate-400">可选</span>
           </h3>
           <p className="text-xs text-slate-400 -mt-2">
-            可为文献总结单独指定服务商与模型；留空的项自动复用上方「翻译模型」配置。
+            同时用于术语解释；留空的项自动复用上方「翻译模型」配置。
           </p>
+          {isQwenMtModel(effectiveSummaryModel) && (
+            <p className="rounded-control bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Qwen-MT 只支持翻译，不能用于文献总结和术语解释。请在这里配置 DeepSeek、Qwen-Plus
+              或其他通用对话模型。
+            </p>
+          )}
 
           <Field label="API Key">
             <input

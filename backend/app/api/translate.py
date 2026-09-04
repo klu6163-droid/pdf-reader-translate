@@ -34,6 +34,13 @@ async def translate_text(req: TextTranslateRequest) -> TextTranslateResponse:
         )
     except LLMError as e:
         trace.finish(False)
+        # 不记录原文、API Key 或 Base URL；保留模型和上游错误正文供诊断包定位。
+        logger.warning(
+            "text translation failed model=%s error_type=%s error=%s",
+            req.config.model,
+            type(e).__name__,
+            e,
+        )
         raise HTTPException(status_code=502, detail=str(e))
     except Exception:
         trace.finish(False)

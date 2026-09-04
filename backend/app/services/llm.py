@@ -21,6 +21,30 @@ from app.services.llm_rate_limit import get_shared_limiter, retry_delay_seconds
 logger = logging.getLogger("llm")
 
 
+_QWEN_MT_LANGUAGE_NAMES = {
+    "auto": "auto",
+    "zh": "Chinese",
+    "zh-cn": "Chinese",
+    "zh-hans": "Chinese",
+    "中文": "Chinese",
+    "中文（简体）": "Chinese",
+    "en": "English",
+    "en-us": "English",
+    "英文": "English",
+    "英语": "English",
+}
+
+
+def is_qwen_mt_model(model: str) -> bool:
+    """Return whether a model uses Qwen-MT's translation-only request contract."""
+    return model.strip().lower().startswith("qwen-mt")
+
+
+def _qwen_mt_language_name(language: str) -> str:
+    value = language.strip()
+    return _QWEN_MT_LANGUAGE_NAMES.get(value.lower(), value)
+
+
 # 抑制幻觉的通用指令，追加到所有 system prompt 后
 ANTI_HALLUCINATION = (
     "严格要求：只依据用户提供的原文作答，不得编造、不得补充原文没有的信息。"
@@ -61,16 +85,20 @@ class LLMService:
     async def chat(
         self,
         messages: list[dict],
-        temperature: float = 0.2,
+        temperature: float | None = 0.2,
         timeout: float = 120.0,
+        extra_payload: dict[str, object] | None = None,
     ) -> str:
         """非流式调用，返回完整文本。"""
         payload = {
             "model": self.config.model,
             "messages": messages,
-            "temperature": temperature,
             "stream": False,
         }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if extra_payload:
+            payload.update(extra_payload)
         url = f"{self._base}/chat/completions"
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             for attempt in range(self.config.max_retries + 1):
@@ -189,9 +217,28 @@ class LLMService:
     # -------- 高层业务方法 --------
 
     async def translate(
-        self, text: str, target_lang: str = "中文", source_lang: str = "auto"
+        self,
+        text: str,
+        target_lang: str = "中文",
+        source_lang: str = "auto",
+        timeout: float = 120.0,
     ) -> str:
         """翻译单段文本。保持术语与公式符号，不擅自增删。"""
+        if is_qwen_mt_model(self.config.model):
+            # Qwen-MT 是单轮翻译模型：messages 必须有且只有一条 user 消息，
+            # 不支持 system role。translation_options 是它的专用语言配置。
+            return await self.chat(
+                [{"role": "user", "content": text}],
+                temperature=None,
+                timeout=timeout,
+                extra_payload={
+                    "translation_options": {
+                        "source_lang": _qwen_mt_language_name(source_lang),
+                        "target_lang": _qwen_mt_language_name(target_lang),
+                    }
+                },
+            )
+
         system = (
             f"你是专业的学术文献翻译。将用户提供的{source_lang}文本忠实翻译为{target_lang}。"
             "要求：保留专业术语、数学符号、公式、引用标记；只翻译不解释；"
@@ -201,7 +248,7 @@ class LLMService:
             {"role": "system", "content": system},
             {"role": "user", "content": text},
         ]
-        return await self.chat(messages)
+        return await self.chat(messages, timeout=timeout)
 
     async def explain_terms(self, text: str) -> str:
         """识别并解释原文中的专业术语。"""
@@ -351,6 +398,17 @@ async def test_config(config: LLMConfig) -> tuple[bool, str]:
     """测试配置是否可用，返回 (ok, message)。"""
     try:
         svc = LLMService(config)
+        if is_qwen_mt_model(config.model):
+            reply = await svc.translate(
+                "This is a connection test.",
+                source_lang="English",
+                target_lang="Chinese",
+                timeout=30.0,
+            )
+            return True, (
+                f"翻译连接成功，模型返回: {reply[:50]}。"
+                "Qwen-MT 仅用于翻译；总结和术语解释请配置通用对话模型"
+            )
         reply = await svc.chat(
             [{"role": "user", "content": "回复 OK 两个字符即可"}],
             timeout=30.0,

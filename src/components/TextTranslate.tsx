@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { translateText } from '@/services/api';
 import { explainTerms, TermsUnavailableError } from '@/services/api';
+import { isQwenMtModel } from '@/services/llmConfig';
 import { useStore, useActiveTab } from '@/store/useSettings';
 import MarkdownLite from './shared/MarkdownLite';
 import type { LLMSettings, SelectionInfo } from '@/types';
@@ -85,7 +86,8 @@ export default function TextTranslate() {
       });
 
       // 异步生成术语解释；失败仅标记，不影响主翻译
-      void fetchTerms(text, targetId, s.settings);
+      // Qwen-MT 只支持单轮翻译，术语解释需使用总结区配置的通用对话模型。
+      void fetchTerms(text, targetId, useStore.getState().getSummarySettings());
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       if (abortMapRef.current.get(targetId) !== controller) return;
@@ -106,6 +108,12 @@ export default function TextTranslate() {
     if (!settings.apiKey) {
       useStore.getState().updateTab(targetId, {
         lastTermsError: '未配置 API Key，术语解释不可用',
+      });
+      return;
+    }
+    if (isQwenMtModel(settings.model)) {
+      useStore.getState().updateTab(targetId, {
+        lastTermsError: 'Qwen-MT 仅支持翻译；请在设置中为文献总结配置通用对话模型',
       });
       return;
     }

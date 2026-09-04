@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from app.models.schemas import LLMConfig
-from app.services.llm import LLMError, LLMService
+from app.services.llm import LLMError, LLMService, test_config as run_config_test
 from app.services.llm_rate_limit import SharedRequestLimiter
 
 
@@ -38,6 +38,86 @@ async def test_chat_null_content_raises_llm_error(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
     with pytest.raises(LLMError, match="空内容"):
         await _svc().chat([{"role": "user", "content": "hi"}])
+
+
+async def test_qwen_mt_translate_uses_translation_only_payload(monkeypatch):
+    """Qwen-MT 必须只有一条 user 消息，并通过 translation_options 指定语言。"""
+    captured: dict = {}
+
+    async def fake_post(self, url, **kwargs):
+        captured.update(kwargs["json"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": "你好"}}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    svc = LLMService(
+        LLMConfig(
+            api_key="k",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="QWEN-MT-PLUS",
+            request_interval_ms=0,
+        )
+    )
+
+    result = await svc.translate("Hello", source_lang="auto", target_lang="中文")
+
+    assert result == "你好"
+    assert captured["messages"] == [{"role": "user", "content": "Hello"}]
+    assert captured["translation_options"] == {
+        "source_lang": "auto",
+        "target_lang": "Chinese",
+    }
+    assert "temperature" not in captured
+
+
+async def test_regular_model_translate_keeps_system_prompt(monkeypatch):
+    """普通 OpenAI-compatible 模型继续使用原有 system + user 请求。"""
+    captured: dict = {}
+
+    async def fake_post(self, url, **kwargs):
+        captured.update(kwargs["json"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": "你好"}}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    svc = LLMService(
+        LLMConfig(
+            api_key="k",
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            request_interval_ms=0,
+        )
+    )
+
+    await svc.translate("Hello")
+
+    assert [message["role"] for message in captured["messages"]] == ["system", "user"]
+    assert "translation_options" not in captured
+    assert captured["temperature"] == 0.2
+
+
+async def test_qwen_mt_config_test_uses_real_translation_payload(monkeypatch):
+    """连接测试不得再用会掩盖 Qwen-MT 契约问题的普通 user ping。"""
+    captured: dict = {}
+
+    async def fake_post(self, url, **kwargs):
+        captured.update(kwargs["json"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": "这是连接测试。"}}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    ok, message = await run_config_test(
+        LLMConfig(
+            api_key="k",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="qwen-mt-turbo",
+            request_interval_ms=0,
+        )
+    )
+
+    assert ok is True
+    assert "翻译连接成功" in message
+    assert captured["messages"] == [
+        {"role": "user", "content": "This is a connection test."}
+    ]
+    assert captured["translation_options"]["target_lang"] == "Chinese"
 
 
 async def test_chat_retries_429_with_exponential_backoff(monkeypatch):

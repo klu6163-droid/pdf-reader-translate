@@ -13,6 +13,10 @@ export const QWEN_MT_RATE_LIMIT_PRESET: Readonly<LLMRateLimitSettings> = {
 
 export const DEFAULT_LLM_RATE_LIMIT = QWEN_MT_RATE_LIMIT_PRESET;
 
+export function isQwenMtModel(model: string): boolean {
+  return model.trim().toLowerCase().startsWith('qwen-mt');
+}
+
 export function normalizeLLMRateLimit(value?: Partial<LLMRateLimitSettings>): LLMRateLimitSettings {
   return {
     maxConcurrency: clampInteger(value?.maxConcurrency, 1, 8, 1),
