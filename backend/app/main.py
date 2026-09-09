@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import diagnostics, overlay_trans, pdf_annot, pdf_edit, pdf_trans, summary, translate
 from app.config import allowed_origins
@@ -79,3 +81,20 @@ app.include_router(diagnostics.router)
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# The portable browser edition places the Vite bundle in a sibling `web/`
+# directory and sets PDF_READER_WEB_DIR before importing this module. Mount it
+# last so every /api route keeps precedence over the static fallback.
+_portable_web_raw = os.environ.get("PDF_READER_WEB_DIR", "").strip()
+if _portable_web_raw:
+    _portable_web_path = Path(_portable_web_raw).expanduser().resolve()
+    if (_portable_web_path / "index.html").is_file():
+        app.mount(
+            "/",
+            StaticFiles(directory=str(_portable_web_path), html=True),
+            name="portable-web",
+        )
+        logger.info("便携版网页已挂载: %s", _portable_web_path)
+    else:
+        logger.error("便携版网页目录无效: %s", _portable_web_path)

@@ -11,6 +11,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --target x86_64-pc-windows-gnu -- --locked",
     "build:backend": "node scripts/build-backend.js",
+    "portable:build": "node scripts/build-portable.js",
     "dist": "npm run tauri:build",
     "version:sync": "node scripts/sync-version.js --write",
     "version:check": "node scripts/sync-version.js --check",

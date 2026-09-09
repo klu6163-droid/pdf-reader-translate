@@ -3,6 +3,65 @@ from __future__ import annotations
 
 import os
 import sys
+import time
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+
+def _portable_web_dir() -> Path | None:
+    """Return the sibling web bundle used by the no-install browser edition."""
+    configured = os.environ.get("PDF_READER_WEB_DIR", "").strip()
+    if configured:
+        candidate = Path(configured).expanduser().resolve()
+    elif getattr(sys, "frozen", False):
+        candidate = Path(sys.executable).resolve().parent / "web"
+    else:
+        return None
+    return candidate if (candidate / "index.html").is_file() else None
+
+
+_PORTABLE_WEB_DIR = _portable_web_dir()
+if _PORTABLE_WEB_DIR is not None:
+    # app.main reads this before registering the final static-file mount.
+    os.environ["PDF_READER_WEB_DIR"] = str(_PORTABLE_WEB_DIR)
+
+_PORTABLE_URL = "http://127.0.0.1:8765/"
+
+
+def _portable_backend_ready() -> bool:
+    """Confirm that port 8765 belongs to a running portable edition."""
+    try:
+        with urllib.request.urlopen(f"{_PORTABLE_URL}api/health", timeout=0.8) as response:
+            if response.status != 200:
+                return False
+        with urllib.request.urlopen(_PORTABLE_URL, timeout=0.8) as response:
+            content_type = response.headers.get("Content-Type", "")
+            body = response.read(65536).decode("utf-8", errors="ignore")
+        return response.status == 200 and "text/html" in content_type and 'id="root"' in body
+    except Exception:
+        return False
+
+
+def _open_portable_ui_when_ready() -> None:
+    """Wait for Uvicorn, then open the locally hosted UI in the default browser."""
+    for _ in range(120):
+        if _portable_backend_ready():
+            webbrowser.open(_PORTABLE_URL)
+            return
+        time.sleep(0.25)
+
+
+# A second launch should focus the existing browser service instead of failing
+# with an opaque "address already in use" error after importing heavy PDF modules.
+if (
+    __name__ == "__main__"
+    and _PORTABLE_WEB_DIR is not None
+    and _portable_backend_ready()
+):
+    if os.environ.get("PDF_READER_NO_BROWSER") != "1":
+        webbrowser.open(_PORTABLE_URL)
+    raise SystemExit(0)
 
 # ----- stdout/stderr 重定向到日志文件 -----
 # frozen（打包）模式：Tauri 无控制台，stdout/stderr 句柄在 Windows 上可能不可写，
@@ -123,13 +182,24 @@ else:
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import uvicorn
-from app.logging_utils import configure_logging
-from app.main import app  # 静态导入，便于 PyInstaller 跟踪依赖
+import uvicorn  # noqa: E402
+from app.logging_utils import configure_logging  # noqa: E402
+from app.main import app  # noqa: E402  # 静态导入，便于 PyInstaller 跟踪依赖
 
 configure_logging()
 
 if __name__ == "__main__":
+    if (
+        _PORTABLE_WEB_DIR is not None
+        and os.environ.get("PDF_READER_NO_BROWSER") != "1"
+    ):
+        import threading
+
+        threading.Thread(
+            target=_open_portable_ui_when_ready,
+            daemon=True,
+            name="portable-browser-opener",
+        ).start()
     # 端口固定 8765（审计 2.7）：前端 BASE 与 Tauri 探测都以该值为准，
     # 旧的 BACKEND_PORT 环境变量只有后端遵守，改它反而让前后端整体断连，故移除
     uvicorn.run(app, host="127.0.0.1", port=8765, reload=False, log_config=None)

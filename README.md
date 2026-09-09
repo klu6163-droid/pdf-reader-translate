@@ -188,6 +188,21 @@ push 和 pull request 上运行。
 - 不签名：Windows 首次运行会弹 SmartScreen「未知发布者」→「更多信息」→「仍要运行」
 - 开发模式（`tauri:dev`）仍用系统 Python 跑后端，改后端代码免重打包；发布模式用 sidecar
 
+### 免安装浏览器便携版
+
+如果接收方无法运行 NSIS 安装包，或电脑缺少可用的 WebView2，可以改发浏览器便携版：
+
+```bash
+npm run portable:build
+```
+
+产物位于 `release/PDF-Reader-Translate-Portable-<版本>-Windows-x64.zip`。接收方完整解压后双击
+`启动 PDF 阅读翻译.cmd`，冻结后的本地 FastAPI 后端会托管 `web/` 中的 Vite 页面并自动打开默认浏览器；
+不需要安装 Python、Node.js、Rust 或 WebView2。使用结束后双击 `停止 PDF 阅读翻译.cmd` 关闭后台服务。
+
+便携版仍只监听 `127.0.0.1:8765`，不会作为局域网服务暴露。压缩包同时附带 MIT、pdf2zh AGPL-3.0
+许可文件和当前工作树的对应源码快照，便于合规分享与复现。
+
 ## 图标
 
 图标已随仓库提供（`src-tauri/icons/`）。若需替换，用官方命令从一张 ≥512×512 的 PNG 重新生成：
