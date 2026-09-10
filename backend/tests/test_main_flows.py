@@ -189,6 +189,10 @@ async def test_pdf_translation_start_progress_result(
     task_id: str | None = None
     work_dir = tmp_path / kind
     work_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(pdf_service, "source_pdf_text_issue", lambda _path: None)
+    monkeypatch.setattr(
+        pdf_service, "translated_pdf_issue", lambda _path, _target="zh": None
+    )
 
     async def fake_progress(upload_path: str, out_dir: str, config, mode: str):
         seen["upload_is_pdf"] = Path(upload_path).read_bytes().startswith(b"%PDF")

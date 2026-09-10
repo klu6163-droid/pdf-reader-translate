@@ -59,6 +59,118 @@ def extract_text_per_page(pdf_path: str) -> list[str]:
     return pages
 
 
+@dataclass(frozen=True)
+class PdfTextLayerStats:
+    """PDF 文字层统计，用于翻译前后守卫。"""
+
+    page_count: int
+    text_page_count: int
+    meaningful_chars: int
+    cjk_chars: int
+    latin_letters: int
+
+
+def _text_layer_stats(texts: list[str]) -> PdfTextLayerStats:
+    """把逐页文本归一化为不包含原文内容的安全统计。"""
+    meaningful_per_page = [sum(char.isalnum() for char in text) for text in texts]
+    return PdfTextLayerStats(
+        page_count=len(texts),
+        text_page_count=sum(count > 0 for count in meaningful_per_page),
+        meaningful_chars=sum(meaningful_per_page),
+        cjk_chars=sum("\u4e00" <= char <= "\u9fff" for text in texts for char in text),
+        latin_letters=sum(
+            char.isascii() and char.isalpha() for text in texts for char in text
+        ),
+    )
+
+
+def inspect_pdf_text_layer(pdf_path: str) -> PdfTextLayerStats:
+    """检查 PDF 的可搜索文字层，使用两个解析器降低误判概率。
+
+    pypdf 与 PyMuPDF 对异常字体/编码的兼容范围不同。两者都能读取时，选择
+    提取到有效字符更多的统计；某一个失败时仍使用另一个结果。
+    """
+    candidates: list[PdfTextLayerStats] = []
+    errors: list[Exception] = []
+
+    try:
+        candidates.append(_text_layer_stats(extract_text_per_page(pdf_path)))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(exc)
+
+    try:
+        fitz = _import_fitz()
+        doc = fitz.open(pdf_path)
+        try:
+            fitz_texts = [page.get_text("text") or "" for page in doc]
+        finally:
+            doc.close()
+        candidates.append(_text_layer_stats(fitz_texts))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(exc)
+
+    if not candidates:
+        detail = type(errors[-1]).__name__ if errors else "unknown"
+        raise ValueError(f"无法读取 PDF 文字层（{detail}）")
+
+    return max(
+        candidates,
+        key=lambda item: (
+            item.meaningful_chars,
+            item.cjk_chars,
+            item.text_page_count,
+        ),
+    )
+
+
+def source_pdf_text_issue(pdf_path: str) -> Optional[str]:
+    """返回源 PDF 的阻断原因；可翻译时返回 None。"""
+    try:
+        stats = inspect_pdf_text_layer(pdf_path)
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("PDF 文字层预检失败: %s", exc)
+        return "无法检查 PDF 文字层，文件可能已损坏。请重新下载原始 PDF 后再试。"
+
+    if stats.page_count == 0:
+        return "该 PDF 没有可翻译页面，请重新选择文件。"
+    if stats.meaningful_chars == 0:
+        return (
+            f"未检测到可翻译的文字层：该 PDF 共 {stats.page_count} 页，但没有可识别文字。"
+            "它可能是扫描件或由“Microsoft Print to PDF”生成的整页图片。"
+            "请先使用 OCR 识别文字，再重新翻译。"
+        )
+    return None
+
+
+def translated_pdf_issue(pdf_path: str, target_lang: str = "zh") -> Optional[str]:
+    """返回译文 PDF 的校验问题；目前仅校验中文目标语言。"""
+    normalized_target = target_lang.strip().lower().replace("_", "-")
+    if not (
+        normalized_target.startswith("zh") or normalized_target in {"中文", "chinese"}
+    ):
+        return None
+
+    try:
+        stats = inspect_pdf_text_layer(pdf_path)
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("译文 PDF 校验失败: %s", exc)
+        return "译文 PDF 无法完成文字校验，已阻止将其标记为成功。请重新翻译。"
+
+    if stats.cjk_chars == 0:
+        _logger.warning(
+            "译文 PDF 未检测到中文: pages=%s text_pages=%s meaningful=%s latin=%s",
+            stats.page_count,
+            stats.text_page_count,
+            stats.meaningful_chars,
+            stats.latin_letters,
+        )
+        return (
+            "译文校验未通过：生成的 PDF 中没有检测到中文文字，"
+            "已阻止将其标记为翻译成功。请确认目标语言为中文，并检查模型配置后重试。"
+        )
+    return None
+
+
 # ---------- 进度 ----------
 
 @dataclass
@@ -691,7 +803,7 @@ def _parse_json_string_array(reply: str) -> list[str]:
         start = data.find("[")
         end = data.rfind("]")
         if start >= 0 and end > start:
-            data = data[start:end + 1]
+            data = data[start : end + 1]
     obj = json.loads(data)
     if not isinstance(obj, list):
         return []

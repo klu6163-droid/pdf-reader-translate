@@ -56,6 +56,10 @@ def fake_generators(monkeypatch):
 
     monkeypatch.setattr(pdf_service, "translate_pdf", fake_translate)
     monkeypatch.setattr(pdf_service, "generate_overlay_translation", fake_overlay)
+    monkeypatch.setattr(pdf_service, "source_pdf_text_issue", lambda _path: None)
+    monkeypatch.setattr(
+        pdf_service, "translated_pdf_issue", lambda _path, _target="zh": None
+    )
 
 
 async def _start_task(client: AsyncClient, start_path: str) -> str:

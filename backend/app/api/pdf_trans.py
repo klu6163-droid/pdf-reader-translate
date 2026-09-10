@@ -73,25 +73,60 @@ async def start_pdf_translate(
         try:
             # 重任务闸门：限制同时进行的翻译任务数，避免 CPU/内存打爆。
             async with heavy_task_gate:
+                preflight_issue = await asyncio.to_thread(
+                    pdf_service.source_pdf_text_issue, upload_path
+                )
+                if preflight_issue:
+                    final_mode = "preflight"
+                    await task_manager.push(
+                        task.id,
+                        {
+                            "progress": 1.0,
+                            "message": preflight_issue,
+                            "mode": final_mode,
+                            "done": True,
+                            "error": True,
+                        },
+                    )
+                    task_manager.finish(task.id, error=preflight_issue)
+                    return
+
                 async for prog in pdf_service.translate_pdf(
                     upload_path, out_dir, config, target_lang
                 ):
                     if prog.mode:
                         final_mode = prog.mode
+                    event_message = prog.message
+                    event_error = prog.error
+                    result_path = prog.result_path
+                    if prog.done and not event_error:
+                        if not result_path:
+                            event_message = "翻译任务未生成结果文件，请重新翻译。"
+                            event_error = True
+                        else:
+                            postflight_issue = await asyncio.to_thread(
+                                pdf_service.translated_pdf_issue,
+                                result_path,
+                                target_lang,
+                            )
+                            if postflight_issue:
+                                event_message = postflight_issue
+                                event_error = True
+                                result_path = None
                     event = {
                         "progress": round(prog.progress, 4),
-                        "message": prog.message,
+                        "message": event_message,
                         "mode": prog.mode,
                         "done": prog.done,
-                        "error": prog.error,
+                        "error": event_error,
                     }
                     await task_manager.push(task.id, event)
                     if prog.done:
-                        succeeded = not prog.error
+                        succeeded = not event_error
                         task_manager.finish(
                             task.id,
-                            result=prog.result_path,
-                            error=prog.message if prog.error else None,
+                            result=result_path,
+                            error=event_message if event_error else None,
                         )
         except Exception as e:  # noqa: BLE001
             msg = f"翻译失败: {e}"
